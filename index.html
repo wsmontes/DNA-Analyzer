@@ -76,6 +76,225 @@
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabContent = document.getElementById('tab-content').children;
 
+    // Proxy manager: Tests upfront, saves the first working proxy
+    const proxyManager = {
+      proxies: [
+        { url: '',                                name: 'Direct' },
+        { url: 'https://api.allorigins.win/raw?url=',     name: 'AllOrigins' },
+        { url: 'https://api.allorigins.cf/raw?url=',      name: 'AllOrigins.cf' },
+        { url: 'https://api.allorigins.dev/raw?url=',     name: 'AllOrigins.dev' },
+        { url: 'https://allorigins.herokuapp.com/raw?url=',name: 'AllOriginsHeroku' },
+        { url: 'https://api.allorigins.live/raw?url=',    name: 'AllOrigins.live' },
+        { url: 'https://api.allorigins.xyz/raw?url=',     name: 'AllOrigins.xyz' },
+        { url: 'https://corsproxy.io/?',                  name: 'CORSProxy.io' },
+        { url: 'https://thingproxy.freeboard.io/fetch/',  name: 'ThingProxy' },
+        { url: 'https://jsonp.afeld.me/?url=',            name: 'jsonp.afeld' },
+        { url: 'https://yacdn.org/proxy/',                 name: 'YACDN' },
+        { url: 'https://crossorigin.me/',                  name: 'CrossOrigin.me' },
+        { url: 'https://cors-anywhere.herokuapp.com/',     name: 'CORS-Anywhere' },
+        { url: 'https://cors.bridged.cc/',                 name: 'Bridged.CC' },
+        { url: 'https://cors.sh/',                         name: 'CORS.sh' },
+        { url: 'https://proxy.it.usecors.com/',            name: 'UseCORS' },
+        { url: 'https://cors.lol/',                        name: 'CORS.lol' },
+        { url: 'https://corsproxy.netlify.app/?url=',      name: 'NetlifyCORS' },
+        { url: 'https://cors.jax.io/?u=',                  name: 'JAX.CORS' },
+        { url: 'https://cors-proxy.htmldriven.com/?url=',  name: 'HTMLDriven' },
+        { url: 'https://jsonp.nodeflix.dev/?url=',         name: 'NodeFlix' },
+        { url: 'https://gimmeproxy.com/api/proxy?url=',    name: 'GimmeProxy' }
+      ],
+      currentProxy: null, // Stores the first working proxy found
+      isInitialized: false,
+      isInitializing: false,
+      cache: new Map(),
+
+      // Log with visual distinction
+      log(message, type = 'info') {
+        const styles = {
+          info: 'color: #2196F3; font-weight: bold;',
+          success: 'color: #4CAF50; font-weight: bold;',
+          error: 'color: #F44336; font-weight: bold;',
+          warning: 'color: #FF9800; font-weight: bold;'
+        };
+        console.log(`%c[ProxyManager] ${message}`, styles[type] || styles.info);
+      },
+
+      // Initialize: Test proxies and find the first working one
+      async initialize() {
+        if (this.isInitialized || this.isInitializing) {
+          return this.isInitialized;
+        }
+        this.isInitializing = true;
+        this.log('Initializing: Testing proxies...');
+
+        const testUrl = 'https://rest.ensembl.org/info/ping?content-type=application/json';
+
+        for (let i = 0; i < this.proxies.length; i++) {
+          const proxy = this.proxies[i];
+          const fullUrl = proxy.url ? `${proxy.url}${encodeURIComponent(testUrl)}` : testUrl;
+          this.log(`Testing proxy: ${proxy.name}...`);
+          try {
+            const response = await fetch(fullUrl, {
+              method: 'GET',
+              headers: { 'Accept': 'application/json' },
+              signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
+
+            if (response.ok) {
+              this.log(`Success! Using proxy: ${proxy.name}`, 'success');
+              this.currentProxy = proxy;
+              this.isInitialized = true;
+              this.isInitializing = false;
+              return true; // Found a working proxy
+            } else {
+              this.log(`${proxy.name} responded but with status: ${response.status}`, 'warning');
+            }
+          } catch (error) {
+            this.log(`${proxy.name} failed: ${error.message}`, 'error');
+          }
+        }
+
+        this.log('Initialization failed: No working proxy found.', 'error');
+        this.isInitializing = false;
+        return false; // No working proxy found
+      },
+
+      // Check cache
+      isCached(url) {
+        return this.cache.has(url);
+      },
+      getFromCache(url) {
+        return this.cache.get(url);
+      },
+      saveToCache(url, data, ttl = 3600000) {
+        this.cache.set(url, {
+          data,
+          expires: Date.now() + ttl
+        });
+
+        // Cleanup expired items occasionally
+        if (Math.random() < 0.1) { // 10% chance to trigger cleanup
+          this.cleanCache();
+        }
+      },
+      cleanCache() {
+        const now = Date.now();
+        for (const [url, cached] of this.cache.entries()) {
+          if (cached.expires < now) {
+            this.cache.delete(url);
+          }
+        }
+      },
+
+      // Fetch using the pre-determined working proxy
+      async fetch(url, options = {}) {
+        // Ensure initialization is complete
+        if (!this.isInitialized) {
+          if (this.isInitializing) {
+             // Wait if initialization is already in progress
+             await new Promise(resolve => {
+                 const interval = setInterval(() => {
+                     if (!this.isInitializing) {
+                         clearInterval(interval);
+                         resolve();
+                     }
+                 }, 100);
+             });
+          } else {
+             // Start initialization if not already started
+             const success = await this.initialize();
+             if (!success) {
+                 throw new Error("Proxy initialization failed. Cannot fetch data.");
+             }
+          }
+        }
+
+        // Check if a working proxy was found during initialization
+        if (!this.currentProxy) {
+            throw new Error("No working proxy available.");
+        }
+
+        // Check cache first
+        if (this.isCached(url)) {
+          const cached = this.getFromCache(url);
+          if (cached.expires > Date.now()) {
+            this.log(`Using cached data for: ${url.substring(0, 50)}...`, 'info');
+            return new Response(new Blob([JSON.stringify(cached.data)],
+                                        {type: 'application/json'}));
+          } else {
+            this.cache.delete(url); // Expired, remove it
+          }
+        }
+
+        const proxy = this.currentProxy;
+        const fullUrl = proxy.url ? `${proxy.url}${encodeURIComponent(url)}` : url;
+
+        try {
+          this.log(`Fetching via ${proxy.name}: ${url.substring(0, 50)}...`);
+          const response = await fetch(fullUrl, {
+            ...options,
+            signal: AbortSignal.timeout(8000) // 8 second timeout
+          });
+
+          if (!response.ok) {
+            // If the chosen proxy fails later, we might need a re-initialization strategy,
+            // but for now, just report the error.
+            this.log(`${proxy.name} failed during fetch: Status ${response.status}`, 'error');
+            throw new Error(`HTTP error! Status: ${response.status} using ${proxy.name}`);
+          }
+
+          const clonedResponse = response.clone();
+          const data = await response.json();
+          this.saveToCache(url, data); // Cache successful response
+          this.log(`Successfully fetched data with ${proxy.name}`, 'success');
+          return clonedResponse;
+
+        } catch (error) {
+          this.log(`Error during fetch with ${proxy.name}: ${error.message}`, 'error');
+          // Consider adding a mechanism here to trigger re-initialization if the saved proxy fails consistently.
+          throw error; // Re-throw the error to be handled by the caller
+        }
+      }
+    };
+
+    // Data manager remains largely the same, relying on proxyManager.fetch
+    const dataManager = {
+      snpCache: new Map(),
+
+      // Get cached SNP data if available
+      getCachedSnp(rsid) {
+        return this.snpCache.get(rsid);
+      },
+
+      // Set SNP in cache
+      cacheSnp(rsid, data) {
+        this.snpCache.set(rsid, data);
+      },
+
+      // Fetch SNP details only when needed
+      async fetchSnp(rsid) {
+        // Check cache first
+        const cached = this.getCachedSnp(rsid);
+        if (cached) {
+          return cached;
+        }
+
+        const url = `https://rest.ensembl.org/variation/human/${rsid}?content-type=application/json`;
+        try {
+          // Use the updated proxyManager.fetch
+          const res = await proxyManager.fetch(url, {
+            headers: { 'Accept': 'application/json' }
+          });
+
+          const data = await res.json();
+          this.cacheSnp(rsid, data);
+          return data;
+        } catch (err) {
+          console.error(`Error fetching ${rsid}:`, err);
+          throw err;
+        }
+      }
+    };
+
     let allResults = [];
     let filteredResults = [];
     let currentPage = 1;
@@ -148,35 +367,25 @@
             throw new Error("No valid SNP data rows found after filtering. Check CSV content and headers.");
         }
 
-        // --- Evaluate and summarize important findings ---
+        // --- Initialize Proxy Manager (crucial step) ---
+        loadingEl.textContent = 'Initializing connections...';
+        const proxyReady = await proxyManager.initialize();
+        if (!proxyReady) {
+            // Optionally inform the user more gracefully
+            alert("Could not establish a connection to external APIs. Some features might be limited.");
+            // Decide if you want to proceed without API access or stop
+        }
+
+        // --- Evaluate and summarize important findings (using the initialized proxy) ---
         clinSummary = [];
         traitSummary = [];
-        let clinCounts = { pathogenic: 0, likely_pathogenic: 0, benign: 0, uncertain: 0, other: 0 };
-        let traitCounts = {};
+        let clinCounts    = { pathogenic:0, likely_pathogenic:0, benign:0, uncertain:0, other:0 };
+        let traitCounts   = {};
         let ancestryHints = 0;
-        let topInsights = [];
+        let topInsights   = [];
 
-        // We'll fetch clinical significance and trait info for the first 200 SNPs for speed
-        const snpsToCheck = allResults.slice(0, 200);
-
-        // Helper: fetch Ensembl info for a batch of SNPs
-        async function fetchEnsemblBatch(snps) {
-          const proxy = 'https://api.allorigins.win/raw?url=';
-          const promises = snps.map(async snp => {
-            try {
-              const url = `${proxy}${encodeURIComponent('https://rest.ensembl.org/variation/human/' + snp.rsid + '?content-type=application/json')}`;
-              const res = await fetch(url);
-              if (!res.ok) throw new Error('Proxy or Ensembl error');
-              const info = await res.json();
-              return { ...snp, ensembl: info };
-            } catch (err) {
-              // Mark as proxy error for user feedback
-              snp.proxyError = true;
-              return null;
-            }
-          });
-          return (await Promise.all(promises)).filter(Boolean);
-        }
+        // We'll only analyze a sample of SNPs initially, then fetch more on demand
+        const snpsToSample = allResults.slice(0,50); 
 
         // Helper: extract trait/health keywords
         function extractTraits(info) {
@@ -192,45 +401,51 @@
           return [...new Set(found)];
         }
 
-        // Fetch and analyze
-        loadingEl.textContent = 'Analyzing clinical significance and traits...';
-        const batch = await fetchEnsemblBatch(snpsToCheck);
+        // Fetch and analyze a sample first
+        loadingEl.textContent = 'Analyzing a sample of SNPs...';
 
-        for (const snp of batch) {
-          const info = snp.ensembl;
-          // Clinical significance
-          let clin = (info.clinical_significance || []).map(x => x.toLowerCase());
-          if (clin.includes('pathogenic')) clinCounts.pathogenic++;
-          else if (clin.includes('likely pathogenic')) clinCounts.likely_pathogenic++;
-          else if (clin.includes('benign')) clinCounts.benign++;
-          else if (clin.includes('uncertain significance')) clinCounts.uncertain++;
-          else clinCounts.other++;
+        for (const snp of snpsToSample) {
+          try {
+            const info = await dataManager.fetchSnp(snp.rsid);
+            
+            // Clinical significance
+            let clin = (info.clinical_significance || []).map(x => x.toLowerCase());
+            if (clin.includes('pathogenic')) clinCounts.pathogenic++;
+            else if (clin.includes('likely pathogenic')) clinCounts.likely_pathogenic++;
+            else if (clin.includes('benign')) clinCounts.benign++;
+            else if (clin.includes('uncertain significance')) clinCounts.uncertain++;
+            else clinCounts.other++;
 
-          if (clin.length > 0) {
-            clinSummary.push({
-              rsid: snp.rsid,
-              clin,
-              gene: info.mapped_genes?.[0]?.gene_symbol || '',
-              desc: info.most_severe_consequence || '',
-              phenotypes: info.phenotypes || []
-            });
+            if (clin.length > 0) {
+              clinSummary.push({
+                rsid: snp.rsid,
+                clin,
+                gene: info.mapped_genes?.[0]?.gene_symbol || '',
+                desc: info.most_severe_consequence || '',
+                phenotypes: info.phenotypes || []
+              });
+            }
+
+            // Traits
+            const traits = extractTraits(info);
+            if (traits.length > 0) {
+              traitSummary.push({
+                rsid: snp.rsid,
+                traits,
+                gene: info.mapped_genes?.[0]?.gene_symbol || '',
+                desc: info.most_severe_consequence || '',
+                phenotypes: info.phenotypes || []
+              });
+              for (const t of traits) traitCounts[t] = (traitCounts[t] || 0) + 1;
+            }
+
+            // Ancestry hints
+            if (traits.includes('ancestry') || traits.includes('ethnicity')) ancestryHints++;
+            
+          } catch (err) {
+            // Just continue with the next SNP
+            console.warn(`Skipping analysis for ${snp.rsid}:`, err.message);
           }
-
-          // Traits
-          const traits = extractTraits(info);
-          if (traits.length > 0) {
-            traitSummary.push({
-              rsid: snp.rsid,
-              traits,
-              gene: info.mapped_genes?.[0]?.gene_symbol || '',
-              desc: info.most_severe_consequence || '',
-              phenotypes: info.phenotypes || []
-            });
-            for (const t of traits) traitCounts[t] = (traitCounts[t] || 0) + 1;
-          }
-
-          // Ancestry hints
-          if (traits.includes('ancestry') || traits.includes('ethnicity')) ancestryHints++;
         }
 
         // Top insights
@@ -432,94 +647,103 @@
         URL.revokeObjectURL(url);
     }
 
-    // Make fetchDetails globally accessible for trait/health tab
+    // Make fetchDetails globally accessible
     window.fetchDetails = fetchDetails;
 
     async function fetchDetails(rsid) {
-        detailsEl.innerHTML = `<p>Loading details for ${rsid}…</p>`;
-        let ensemblInfo = {};
-        let popFreq = {};
-        let snpediaSummary = 'Could not fetch SNPedia summary.';
-        let errorMessages = [];
-        const proxy = 'https://api.allorigins.win/raw?url=';
+      detailsEl.innerHTML = `<p>Loading details for ${rsid}…</p>`;
+      let ensemblInfo = {};
+      let popFreq = {};
+      let snpediaSummary = 'Could not fetch SNPedia summary.';
+      let errorMessages = [];
 
-        try {
-            const url = `${proxy}${encodeURIComponent('https://rest.ensembl.org/variation/human/' + rsid + '?content-type=application/json')}`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`Proxy or Ensembl API error (${res.status})`);
-            ensemblInfo = await res.json();
-        } catch (err) {
-            errorMessages.push(`Failed to fetch Ensembl variation data (proxy or Ensembl error): ${err.message}`);
-        }
+      try {
+          // Use dataManager which uses the initialized proxy
+          ensemblInfo = await dataManager.fetchSnp(rsid);
+      } catch (err) {
+          errorMessages.push(`Failed to fetch Ensembl variation data: ${err.message}`);
+      }
 
-        if (ensemblInfo.name) {
-             try {
-                const url = `${proxy}${encodeURIComponent('https://rest.ensembl.org/variation/human/' + rsid + '?pops=1;content-type=application/json')}`;
-                const pfRes = await fetch(url);
-                if (!pfRes.ok) throw new Error(`Proxy or Ensembl PopFreq API error (${pfRes.status})`);
-                const pfData = await pfRes.json();
-                if (pfData.populations) {
-                     popFreq = pfData.populations.reduce((acc, p) => {
-                        acc[p.population] = p.frequency !== undefined ? p.frequency.toFixed(4) : 'N/A';
-                        return acc;
-                    }, {});
-                } else {
-                     popFreq = { 'Info': 'No population data available.' };
-                }
-            } catch (err) {
-                errorMessages.push(`Failed to fetch population frequencies (proxy or Ensembl error): ${err.message}`);
-                popFreq = { 'Error': 'Could not load data.' };
-            }
-        } else {
-             popFreq = { 'Info': 'Skipped due to variation fetch error.' };
-        }
+      // Fetch population frequencies (also uses proxyManager.fetch)
+      if (ensemblInfo.name) {
+           try {
+              const url = `https://rest.ensembl.org/variation/human/${rsid}?pops=1;content-type=application/json`;
+              const pfRes = await proxyManager.fetch(url, {
+                headers: { 'Accept': 'application/json' }
+              });
+              const pfData = await pfRes.json();
+              if (pfData.populations) {
+                   popFreq = pfData.populations.reduce((acc, p) => {
+                      acc[p.population] = p.frequency !== undefined ? p.frequency.toFixed(4) : 'N/A';
+                      return acc;
+                  }, {});
+              } else {
+                   popFreq = { 'Info': 'No population data available.' };
+              }
+          } catch (err) {
+              errorMessages.push(`Failed to fetch population frequencies: ${err.message}`);
+              popFreq = { 'Error': 'Could not load data.' };
+          }
+      } else {
+           popFreq = { 'Info': 'Skipped due to variation fetch error.' };
+      }
 
-        try {
-            const spRes = await fetch(`https://en.wikipedia.org/w/api.php?` +
-                new URLSearchParams({
-                    action: 'query', prop: 'extracts', format: 'json',
-                    titles: rsid, origin: '*', exintro: '', explaintext: ''
-                }));
-            if (!spRes.ok) throw new Error(`Wikipedia API error (${spRes.status})`);
-            const wpData = await spRes.json();
-            const pages = wpData.query?.pages || {};
-            const page = Object.values(pages)[0];
-            if (page && !page.missing && page.extract) {
-                snpediaSummary = page.extract;
-            } else {
-                 snpediaSummary = 'No SNPedia article found or summary available.';
-            }
-        } catch (err) {
-            errorMessages.push(`Failed to fetch SNPedia summary: ${err.message}`);
-        }
+      // Fetch SNPedia summary (direct fetch, no proxy needed)
+      try {
+          // Wikipedia API already supports CORS, so no proxy needed
+          const spRes = await fetch(`https://en.wikipedia.org/w/api.php?` +
+              new URLSearchParams({
+                  action: 'query', prop: 'extracts', format: 'json',
+                  titles: rsid, origin: '*', exintro: '', explaintext: ''
+              }));
+          if (!spRes.ok) throw new Error(`Wikipedia API error (${spRes.status})`);
+          const wpData = await spRes.json();
+          const pages = wpData.query?.pages || {};
+          const page = Object.values(pages)[0];
+          if (page && !page.missing && page.extract) {
+              snpediaSummary = page.extract;
+          } else {
+               snpediaSummary = 'No SNPedia article found or summary available.';
+          }
+      } catch (err) {
+          errorMessages.push(`Failed to fetch SNPedia summary: ${err.message}`);
+      }
 
-        const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'none';
-        const popFreqHtml = Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('');
-        const phenotypesHtml = (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('');
+      // --- Display results ---
+      const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'none';
+      const popFreqHtml = Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('');
+      const phenotypesHtml = (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('');
 
-        detailsEl.innerHTML = `
-            <h2>Details for ${rsid}</h2>
-            ${errorMessages.length > 0 ? `<p style="color:orange;"><strong>Note:</strong> ${errorMessages.join('<br>')}<br>
-            If this persists, try running this app from a local web server or use your own CORS proxy.</p>` : ''}
-            <p><strong>Links:</strong>
-               <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a> |
-               <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a> |
-               <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
-            </p>
-            <p><strong>Most Severe Consequence:</strong> ${ensemblInfo.most_severe_consequence || 'N/A'}</p>
-            <p><strong>Ancestral Allele:</strong> ${ensemblInfo.ancestral_allele || 'N/A'}</p>
-            <p><strong>Clinical Significance:</strong> ${clinicalSignificance}</p>
-            <h3>Population Frequencies</h3>
-            ${popFreqHtml ? `<ul>${popFreqHtml}</ul>` : '<p>No population frequency data loaded.</p>'}
-            <h3>Phenotypes</h3>
-            ${phenotypesHtml ? `<ul>${phenotypesHtml}</ul>` : '<p>No phenotype data.</p>'}
-            <h3>SNPedia Summary</h3>
-            <p>${snpediaSummary.replace(/\n/g, '<br>')}</p>
-            <details>
-                <summary>Full Ensembl Variation JSON</summary>
-                <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
-            </details>
-        `;
+      // Display which proxy is being used (if any)
+      let proxyInfo = '<small>Proxy status: Not initialized or none working</small>';
+      if (proxyManager.isInitialized && proxyManager.currentProxy) {
+          proxyInfo = proxyManager.currentProxy.url
+            ? `<small>Using: ${proxyManager.currentProxy.name} proxy</small>`
+            : '<small>Using: Direct API access</small>';
+      }
+
+      detailsEl.innerHTML = `
+          <h2>Details for ${rsid} ${proxyInfo}</h2>
+          ${errorMessages.length > 0 ? `<p style="color:orange;"><strong>Note:</strong> ${errorMessages.join('<br>')}</p>` : ''}
+          <p><strong>Links:</strong>
+             <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a> |
+             <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a> |
+             <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
+          </p>
+          <p><strong>Most Severe Consequence:</strong> ${ensemblInfo.most_severe_consequence || 'N/A'}</p>
+          <p><strong>Ancestral Allele:</strong> ${ensemblInfo.ancestral_allele || 'N/A'}</p>
+          <p><strong>Clinical Significance:</strong> ${clinicalSignificance}</p>
+          <h3>Population Frequencies</h3>
+          ${popFreqHtml ? `<ul>${popFreqHtml}</ul>` : '<p>No population frequency data loaded.</p>'}
+          <h3>Phenotypes</h3>
+          ${phenotypesHtml ? `<ul>${phenotypesHtml}</ul>` : '<p>No phenotype data.</p>'}
+          <h3>SNPedia Summary</h3>
+          <p>${snpediaSummary.replace(/\n/g, '<br>')}</p>
+          <details>
+              <summary>Full Ensembl Variation JSON</summary>
+              <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
+          </details>
+      `;
     }
   </script>
 </body>
