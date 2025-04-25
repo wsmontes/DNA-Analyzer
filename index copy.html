@@ -2,705 +2,67 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DNA Explorer</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    :root {
-      --primary: #4361ee;
-      --primary-light: #4895ef;
-      --secondary: #3f37c9;
-      --accent: #4cc9f0;
-      --success: #0cce6b;
-      --warning: #fca311;
-      --danger: #e63946;
-      --light: #f8f9fa;
-      --dark: #212529;
-      --gray: #6c757d;
-      --gray-light: #dee2e6;
-      --shadow: 0 4px 12px rgba(0,0,0,0.08);
-      --radius: 8px;
-      --transition: all 0.2s ease;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: #fbfbfd;
-      color: var(--dark);
-      line-height: 1.6;
-      min-height: 100vh;
-    }
-
-    .container {
-      width: 100%;
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-
-    header {
-      background: #fff;
-      padding: 16px 0;
-      box-shadow: var(--shadow);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      margin-bottom: 24px;
-    }
-
-    .header-content {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: var(--primary);
-    }
-
-    .logo h1 {
-      font-size: 1.6rem;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .logo span {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      background: var(--primary);
-      color: white;
-      border-radius: 50%;
-      font-weight: bold;
-      font-size: 20px;
-    }
-
-    .upload-area {
-      background: #fff;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 32px;
-      text-align: center;
-      margin-bottom: 24px;
-      border: 2px dashed var(--gray-light);
-    }
-
-    .upload-area.dragover {
-      border-color: var(--primary);
-      background: rgba(67, 97, 238, 0.05);
-    }
-
-    .upload-area h2 {
-      margin-bottom: 16px;
-      font-weight: 500;
-      color: var(--dark);
-    }
-
-    .upload-area p {
-      color: var(--gray);
-      margin-bottom: 24px;
-    }
-
-    .file-input-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-
-    .file-input {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 10px 20px;
-      border-radius: var(--radius);
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
-      transition: var(--transition);
-      text-decoration: none;
-      gap: 8px;
-    }
-
-    .btn-primary {
-      background: var(--primary);
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background: var(--secondary);
-    }
-
-    .btn-outline {
-      background: transparent;
-      border: 1px solid var(--gray-light);
-      color: var(--gray);
-    }
-
-    .btn-outline:hover {
-      border-color: var(--primary);
-      color: var(--primary);
-    }
-
-    .btn-sm {
-      padding: 6px 12px;
-      font-size: 0.9rem;
-    }
-
-    #loading {
-      display: none;
-      padding: 16px;
-      border-radius: var(--radius);
-      background: rgba(67, 97, 238, 0.1);
-      color: var(--primary);
-      margin: 16px 0;
-      text-align: center;
-      font-weight: 500;
-    }
-
-    .section {
-      background: white;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 24px;
-      margin-bottom: 24px;
-    }
-
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .section-title {
-      font-size: 1.4rem;
-      font-weight: 600;
-    }
-
-    .dashboard {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
-    }
-
-    .dashboard-card {
-      background: white;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 20px;
-      text-align: center;
-      transition: var(--transition);
-      border: 1px solid var(--gray-light);
-    }
-
-    .dashboard-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-    }
-
-    .dashboard-card .number {
-      font-size: 2.5rem;
-      font-weight: 700;
-      color: var(--primary);
-      margin-bottom: 8px;
-    }
-
-    .dashboard-card .label {
-      color: var(--gray);
-      font-weight: 500;
-    }
-
-    .insights-wrapper {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 24px;
-    }
-
-    .insight-item {
-      background: white;
-      border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 16px;
-      border-left: 4px solid var(--primary-light);
-    }
-
-    .insight-item:last-child {
-      margin-bottom: 0;
-    }
-
-    .tab-container {
-      margin-bottom: 24px;
-    }
-
-    .tab-bar {
-      display: flex;
-      overflow-x: auto;
-      border-bottom: 2px solid var(--gray-light);
-      margin-bottom: 16px;
-    }
-
-    .tab-btn {
-      background: transparent;
-      border: none;
-      padding: 12px 24px;
-      font-weight: 500;
-      cursor: pointer;
-      color: var(--gray);
-      border-bottom: 2px solid transparent;
-      margin-bottom: -2px;
-      transition: var(--transition);
-      white-space: nowrap;
-    }
-
-    .tab-btn:hover {
-      color: var(--primary);
-    }
-
-    .tab-btn.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
-    }
-
-    .tab-content {
-      background: white;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-    }
-
-    .tab-panel {
-      display: none;
-      padding: 24px;
-    }
-
-    .tab-panel.active {
-      display: block;
-    }
-
-    .filters {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .search-input {
-      flex: 1;
-      min-width: 200px;
-      padding: 10px 16px;
-      border: 1px solid var(--gray-light);
-      border-radius: var(--radius);
-      font-size: 1rem;
-      transition: var(--transition);
-    }
-
-    .search-input:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.15);
-    }
-
-    select {
-      padding: 10px 16px;
-      border: 1px solid var(--gray-light);
-      border-radius: var(--radius);
-      background: white;
-      font-size: 1rem;
-      min-width: 180px;
-      transition: var(--transition);
-    }
-
-    select:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.15);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th, td {
-      padding: 12px 16px;
-      text-align: left;
-      border-bottom: 1px solid var(--gray-light);
-    }
-
-    th {
-      background: rgba(67, 97, 238, 0.05);
-      font-weight: 600;
-      color: var(--dark);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    tbody tr {
-      transition: var(--transition);
-    }
-
-    tbody tr:hover {
-      background: rgba(67, 97, 238, 0.05);
-    }
-
-    .pagination {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-top: 20px;
-      gap: 8px;
-    }
-
-    .pagination button {
-      background: white;
-      border: 1px solid var(--gray-light);
-      border-radius: var(--radius);
-      padding: 8px 16px;
-      cursor: pointer;
-      transition: var(--transition);
-    }
-
-    .pagination button:hover:not(:disabled) {
-      background: var(--primary);
-      color: white;
-      border-color: var(--primary);
-    }
-
-    .pagination button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .clin-pathogenic {
-      color: var(--danger);
-      font-weight: 600;
-    }
-
-    .clin-benign {
-      color: var(--success);
-    }
-
-    .clin-uncertain {
-      color: var(--warning);
-    }
-
-    .trait-keyword {
-      background: rgba(67, 97, 238, 0.1);
-      color: var(--primary);
-      border-radius: 20px;
-      padding: 2px 10px;
-      margin-right: 6px;
-      font-size: 0.9rem;
-      display: inline-block;
-      margin-bottom: 4px;
-    }
-
-    .tooltip {
-      position: relative;
-      display: inline-block;
-      border-bottom: 1px dotted var(--gray);
-      cursor: help;
-    }
-
-    .tooltip:hover::after {
-      content: attr(title);
-      position: absolute;
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--dark);
-      color: white;
-      padding: 8px 12px;
-      border-radius: var(--radius);
-      font-size: 0.9rem;
-      white-space: nowrap;
-      z-index: 100;
-    }
-
-    .snp-link {
-      color: var(--primary);
-      text-decoration: none;
-      cursor: pointer;
-      font-weight: 500;
-      transition: var(--transition);
-    }
-
-    .snp-link:hover {
-      text-decoration: underline;
-      color: var(--secondary);
-    }
-
-    .details-card {
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      background: white;
-      padding: 24px;
-      margin-top: 24px;
-    }
-
-    .details-card h2 {
-      margin-bottom: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .details-card h3 {
-      margin: 20px 0 12px;
-      font-weight: 600;
-      color: var(--primary);
-      font-size: 1.1rem;
-    }
-
-    .details-card ul {
-      margin-left: 20px;
-    }
-
-    .details-card strong {
-      font-weight: 600;
-    }
-
-    .external-links {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-
-    .external-links a {
-      text-decoration: none;
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 0.9rem;
-      background: rgba(67, 97, 238, 0.1);
-      color: var(--primary);
-      transition: var(--transition);
-    }
-
-    .external-links a:hover {
-      background: var(--primary);
-      color: white;
-    }
-
-    details summary {
-      cursor: pointer;
-      padding: 12px;
-      background: rgba(67, 97, 238, 0.05);
-      border-radius: var(--radius);
-      margin: 16px 0;
-      font-weight: 500;
-    }
-
-    details pre {
-      background: #f8f9fa;
-      padding: 16px;
-      border-radius: var(--radius);
-      overflow: auto;
-      max-height: 500px;
-    }
-
-    @media (max-width: 768px) {
-      .container {
-        padding: 0 12px;
-      }
-
-      .header-content {
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .dashboard {
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      }
-
-      .insights-wrapper {
-        grid-template-columns: 1fr;
-      }
-
-      .filters {
-        flex-direction: column;
-      }
-
-      .search-input, select {
-        width: 100%;
-      }
-
-      .external-links {
-        flex-direction: column;
-      }
-    }
-
-    /* Loading animations */
-    .spinner {
-      width: 24px;
-      height: 24px;
-      border: 3px solid rgba(67, 97, 238, 0.1);
-      border-radius: 50%;
-      border-top-color: var(--primary);
-      animation: spin 1s ease infinite;
-      display: inline-block;
-      vertical-align: middle;
-      margin-right: 8px;
-    }
-
-    @keyframes spin {
-      to {transform: rotate(360deg);}
-    }
-
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: #f1f1f1;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: #c1c1c1;
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: #a1a1a1;
-    }
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f7f9fa; }
+    #summary, #table, #charts, #details, #dashboard, #insights, #traits { margin-top: 30px; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #e3eaf1; }
+    #loading { display: none; font-weight: bold; color: blue; margin-top: 15px; }
+    #pagination { margin-top: 10px; }
+    #pagination button { margin: 0 5px; }
+    #dashboard { display: flex; gap: 30px; }
+    .dashboard-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 18px 24px; min-width: 180px; }
+    #insights { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 18px 24px; }
+    #traits { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 18px 24px; }
+    .insight-item { margin-bottom: 12px; }
+    .clin-pathogenic { color: #b71c1c; font-weight: bold; }
+    .clin-benign { color: #388e3c; }
+    .clin-uncertain { color: #fbc02d; }
+    .trait-keyword { background: #e3eaf1; border-radius: 4px; padding: 2px 6px; margin-right: 4px; font-size: 0.95em; }
+    .tab-btn { background: #e3eaf1; border: none; padding: 8px 16px; margin-right: 8px; border-radius: 4px 4px 0 0; cursor: pointer; }
+    .tab-btn.active { background: #fff; border-bottom: 2px solid #1976d2; font-weight: bold; }
+    #tab-content > div { display: none; }
+    #tab-content > .active { display: block; }
+    .tooltip { border-bottom: 1px dotted #888; cursor: help; }
+    .help { color: #1976d2; font-size: 0.95em; margin-left: 8px; }
+    .snp-link { color: #1976d2; text-decoration: underline; cursor: pointer; }
   </style>
 </head>
 <body>
-  <header>
-    <div class="container header-content">
-      <a href="#" class="logo">
-        <span>DNA</span>
-        <h1>DNA Explorer</h1>
-      </a>
-    </div>
-  </header>
+  <h1>DNA Explorer <span class="help tooltip" title="Upload your MyHeritage DNA ZIP file to begin.">?</span></h1>
+  <input type="file" id="fileInput" accept=".zip" />
+  <div id="loading">Processing file...</div>
 
-  <main class="container">
-    <div class="upload-area" id="uploadArea">
-      <h2>Upload Your DNA Data</h2>
-      <p>Upload your MyHeritage DNA ZIP file to begin analysis</p>
-      <div class="file-input-wrapper">
-        <button class="btn btn-primary">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-          </svg>
-          Select DNA File
-        </button>
-        <input type="file" id="fileInput" accept=".zip" class="file-input" />
-      </div>
-    </div>
+  <div id="dashboard"></div>
+  <div id="insights"></div>
 
-    <div id="loading">
-      <span class="spinner"></span>
-      Processing DNA data...
-    </div>
+  <div id="filters" style="margin-top:20px;">
+    <input type="text" id="searchInput" placeholder="Search rsID…" />
+    <select id="chromFilter">
+      <option value="">All chromosomes</option>
+    </select>
+    <button id="downloadBtn">Download JSON Report</button>
+  </div>
 
-    <section id="dashboard" class="dashboard section" style="display: none;"></section>
-
-    <section id="insightSection" class="section" style="display: none;">
-      <div class="section-header">
-        <h2 class="section-title">Key Insights</h2>
-      </div>
-      <div class="insights-wrapper">
-        <div id="insights"></div>
-        <div id="traits"></div>
-      </div>
-    </section>
-    
-    <div class="section" id="dataSection" style="display: none;">
-      <div class="section-header">
-        <h2 class="section-title">DNA Data Analysis</h2>
-        <button id="downloadBtn" class="btn btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-          </svg>
-          Download Report
-        </button>
-      </div>
-      
-      <div class="filters">
-        <input type="text" id="searchInput" placeholder="Search by rsID..." class="search-input" />
-        <select id="chromFilter">
-          <option value="">All chromosomes</option>
-        </select>
-      </div>
-
-      <div class="tab-container">
-        <div class="tab-bar" id="tab-bar">
-          <button class="tab-btn active" data-tab="table">All SNPs</button>
-          <button class="tab-btn" data-tab="traits">Health & Traits</button>
-          <button class="tab-btn" data-tab="charts">Charts</button>
-        </div>
-        
-        <div class="tab-content">
-          <div id="table" class="tab-panel active"></div>
-          <div id="traits" class="tab-panel"></div>
-          <div id="charts" class="tab-panel">
-            <canvas id="genoChart" width="600" height="300"></canvas>
-          </div>
-        </div>
-      </div>
-      
-      <div id="pagination" class="pagination"></div>
-    </div>
-
-    <div id="details" class="details-card" style="display: none;"></div>
-  </main>
+  <div id="tab-bar" style="margin-top:20px;">
+    <button class="tab-btn active" data-tab="table">All SNPs</button>
+    <button class="tab-btn" data-tab="traits">Health & Traits</button>
+    <button class="tab-btn" data-tab="charts">Charts</button>
+  </div>
+  <div id="tab-content">
+    <div id="table" class="active"></div>
+    <div id="traits"></div>
+    <div id="charts"><canvas id="genoChart" width="600" height="300"></canvas></div>
+  </div>
+  <div id="pagination"></div>
+  <div id="details"></div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      // Setup drag and drop for upload area
-      const uploadArea = document.getElementById('uploadArea');
-      
-      uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-      });
-      
-      uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
-      });
-      
-      uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-        
-        if (e.dataTransfer.files.length) {
-          document.getElementById('fileInput').files = e.dataTransfer.files;
-          // Trigger the change event manually
-          const event = new Event('change');
-          document.getElementById('fileInput').dispatchEvent(event);
-        }
-      });
-    });
-
     const loadingEl = document.getElementById('loading');
     const tableContainer = document.getElementById('table');
     const paginationEl = document.getElementById('pagination');
@@ -710,22 +72,9 @@
     const downloadBtn = document.getElementById('downloadBtn');
     const dashboardEl = document.getElementById('dashboard');
     const insightsEl = document.getElementById('insights');
-    const insightSection = document.getElementById('insightSection');
-    const dataSection = document.getElementById('dataSection');
     const traitsEl = document.getElementById('traits');
     const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanels = document.querySelectorAll('.tab-panel');
-
-    // Tab switching logic
-    tabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        tabBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        
-        tabPanels.forEach(panel => panel.classList.remove('active'));
-        document.getElementById(btn.dataset.tab).classList.add('active');
-      });
-    });
+    const tabContent = document.getElementById('tab-content').children;
 
     // Proxy manager: Tests upfront, saves the first working proxy
     const proxyManager = {
@@ -927,24 +276,30 @@
     let clinSummary = [];
     let traitSummary = [];
 
+    // Tab switching logic
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        Array.from(tabContent).forEach(div => div.classList.remove('active'));
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
     document.getElementById('fileInput').addEventListener('change', async e => {
       const file = e.target.files[0];
       if (!file) return;
 
       // Reset UI
       loadingEl.style.display = 'block';
-      loadingEl.innerHTML = '<span class="spinner"></span> Processing file...';
+      loadingEl.textContent = 'Processing file...';
       dashboardEl.innerHTML = '';
-      dashboardEl.style.display = 'none';
       insightsEl.innerHTML = '';
-      insightSection.style.display = 'none';
-      dataSection.style.display = 'none';
       document.getElementById('summary')?.remove();
       tableContainer.innerHTML = '';
       paginationEl.innerHTML = '';
       document.getElementById('charts').innerHTML = '<canvas id="genoChart" width="600" height="300"></canvas>';
       detailsEl.innerHTML = '';
-      detailsEl.style.display = 'none';
       searchInput.value = '';
       chromFilter.value = '';
       chromFilter.innerHTML = '<option value="">All chromosomes</option>';
@@ -986,7 +341,7 @@
         }
 
         // --- Initialize Proxy Manager (crucial step) ---
-        loadingEl.innerHTML = '<span class="spinner"></span> Initializing connections...';
+        loadingEl.textContent = 'Initializing connections...';
         const proxyReady = await proxyManager.initialize();
         if (!proxyReady) {
             // Optionally inform the user more gracefully
@@ -1020,7 +375,7 @@
         }
 
         // Fetch and analyze a sample first
-        loadingEl.innerHTML = '<span class="spinner"></span> Analyzing a sample of SNPs...';
+        loadingEl.textContent = 'Analyzing a sample of SNPs...';
 
         for (const snp of snpsToSample) {
           try {
@@ -1066,11 +421,6 @@
           }
         }
 
-        // Show the dashboard and sections
-        dashboardEl.style.display = 'block';
-        insightSection.style.display = 'block';
-        dataSection.style.display = 'block';
-
         // Top insights
         if (clinCounts.pathogenic > 0) topInsights.push(`<span class="clin-pathogenic">${clinCounts.pathogenic} pathogenic SNPs detected</span>`);
         if (clinCounts.likely_pathogenic > 0) topInsights.push(`<span class="clin-pathogenic">${clinCounts.likely_pathogenic} likely pathogenic SNPs</span>`);
@@ -1083,35 +433,35 @@
         // --- Dashboard ---
         dashboardEl.innerHTML = `
           <div class="dashboard-card">
-            <div class="number">${allResults.length.toLocaleString()}</div>
-            <div class="label">Total SNPs</div>
+            <div style="font-size:2em;font-weight:bold;">${allResults.length}</div>
+            <div>Total SNPs</div>
           </div>
           <div class="dashboard-card">
-            <div class="number">${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</div>
-            <div class="label">Potentially Pathogenic</div>
+            <div style="font-size:2em;font-weight:bold;">${clinCounts.pathogenic + clinCounts.likely_pathogenic}</div>
+            <div>Potentially Pathogenic</div>
           </div>
           <div class="dashboard-card">
-            <div class="number">${Object.keys(traitCounts).length}</div>
-            <div class="label">Traits/Phenotypes</div>
+            <div style="font-size:2em;font-weight:bold;">${Object.keys(traitCounts).length}</div>
+            <div>Traits/Phenotypes</div>
           </div>
           <div class="dashboard-card">
-            <div class="number">${ancestryHints}</div>
-            <div class="label">Ancestry Markers</div>
+            <div style="font-size:2em;font-weight:bold;">${ancestryHints}</div>
+            <div>Ancestry Markers</div>
           </div>
         `;
 
         // --- Insights ---
         insightsEl.innerHTML = `
-          <h3>Top Insights</h3>
-          ${topInsights.length ? topInsights.map(i=>`<div class="insight-item">${i}</div>`).join('') : '<div class="insight-item">No high-priority findings in first 50 SNPs.</div>'}
-          <div style="margin-top:10px;font-size:0.9em;color:var(--gray);">(Click a SNP in the table for more details. Only first 50 SNPs are deeply analyzed for speed.)</div>
+          <h2>Top Insights</h2>
+          ${topInsights.length ? topInsights.map(i=>`<div class="insight-item">${i}</div>`).join('') : '<div>No high-priority findings in first 200 SNPs.</div>'}
+          <div style="margin-top:10px;font-size:0.95em;color:#888;">(Click a SNP in the table for more details. Only first 200 SNPs are deeply analyzed for speed.)</div>
         `;
 
         // --- Traits/Health Tab ---
         let traitHtml = '';
         if (traitSummary.length) {
-          traitHtml += `<h3>Health & Traits</h3>`;
-          traitHtml += `<table><thead><tr><th>rsID</th><th>Gene</th><th>Traits</th><th>Phenotypes</th></tr></thead><tbody>`;
+          traitHtml += `<h2>Health & Traits</h2>`;
+          traitHtml += `<table><tr><th>rsID</th><th>Gene</th><th>Traits</th><th>Phenotypes</th></tr>`;
           for (const t of traitSummary) {
             traitHtml += `<tr>
               <td><span class="snp-link" onclick="fetchDetails('${t.rsid}')">${t.rsid}</span></td>
@@ -1120,9 +470,9 @@
               <td>${t.phenotypes.map(p=>p.description).join('; ')}</td>
             </tr>`;
           }
-          traitHtml += `</tbody></table>`;
+          traitHtml += `</table>`;
         } else {
-          traitHtml = `<div>No trait/phenotype associations found in first 50 SNPs.</div>`;
+          traitHtml = `<div>No trait/phenotype associations found in first 200 SNPs.</div>`;
         }
         traitsEl.innerHTML = traitHtml;
 
@@ -1134,7 +484,7 @@
 
         tableEl = document.createElement('table');
         tableEl.innerHTML = `<thead><tr><th>rsID</th><th>Chromosome</th><th>Position</th><th>Genotype</th></tr></thead><tbody></tbody>`;
-        tableContainer.innerHTML = '';
+        tableContainer.innerHTML = '<h2>SNP Data</h2>';
         tableContainer.append(tableEl);
 
         // Populate chromosome filter
@@ -1160,25 +510,9 @@
           type: 'pie',
           data: {
             labels: ['Homozygous (approx)', 'Heterozygous (approx)'],
-            datasets: [{ 
-              data: [homo, hetero], 
-              backgroundColor: ['#4361ee', '#4cc9f0'],
-              borderColor: 'white',
-              borderWidth: 2
-            }]
+            datasets: [{ data: [homo, hetero], backgroundColor: ['#66c2a5', '#fc8d62'] }]
           },
-          options: { 
-            responsive: true, 
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: 'bottom',
-                labels: {
-                  padding: 20
-                }
-              }
-            }
-          }
+          options: { responsive: true, maintainAspectRatio: false }
         });
 
         searchInput.addEventListener('input', handleFilterChange);
@@ -1187,24 +521,13 @@
 
       } catch (error) {
         dashboardEl.innerHTML = '';
-        dashboardEl.style.display = 'none';
         insightsEl.innerHTML = '';
-        insightSection.style.display = 'none';
-        dataSection.style.display = 'none';
-        detailsEl.style.display = 'none';
-        
-        // Show error in a nice way
-        document.body.insertAdjacentHTML('beforeend', `
-          <div class="section" style="text-align:center;margin-top:40px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="#e63946" viewBox="0 0 16 16">
-              <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-              <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
-            </svg>
-            <h2 style="margin:20px 0">Error Processing DNA File</h2>
-            <p style="color:var(--danger)">${error.message}</p>
-            <button class="btn btn-primary" style="margin-top:20px;" onclick="location.reload()">Try Again</button>
-          </div>
-        `);
+        traitsEl.innerHTML = '';
+        tableContainer.innerHTML = '';
+        paginationEl.innerHTML = '';
+        detailsEl.innerHTML = '';
+        document.getElementById('charts').innerHTML = '';
+        alert("Error: " + error.message);
       } finally {
         loadingEl.style.display = 'none';
       }
@@ -1240,12 +563,7 @@
 
         // Add click listeners to new rows (for keyboard accessibility)
         tbody.querySelectorAll('tr[data-rsid]').forEach(row => {
-            row.addEventListener('click', (e) => {
-                // Don't trigger if they clicked directly on the link
-                if (!e.target.classList.contains('snp-link')) {
-                    fetchDetails(row.dataset.rsid);
-                }
-            });
+            row.addEventListener('click', () => fetchDetails(row.dataset.rsid));
         });
     }
 
@@ -1306,17 +624,7 @@
     window.fetchDetails = fetchDetails;
 
     async function fetchDetails(rsid) {
-      detailsEl.style.display = 'block';
-      detailsEl.innerHTML = `
-        <div style="display:flex;align-items:center;gap:12px;">
-          <span class="spinner"></span>
-          <p>Loading details for ${rsid}…</p>
-        </div>
-      `;
-      
-      // Scroll to details
-      detailsEl.scrollIntoView({behavior: 'smooth'});
-      
+      detailsEl.innerHTML = `<p>Loading details for ${rsid}…</p>`;
       let ensemblInfo = {};
       let popFreq = {};
       let snpediaSummary = 'Could not fetch SNPedia summary.';
@@ -1376,72 +684,34 @@
 
       // --- Display results ---
       const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'none';
-      const popFreqHtml = Object.entries(popFreq).length > 0 
-        ? Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('') 
-        : '<li>No population data available</li>';
-      const phenotypesHtml = (ensemblInfo.phenotypes || []).length > 0
-        ? (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('')
-        : '<li>No phenotype data available</li>';
+      const popFreqHtml = Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('');
+      const phenotypesHtml = (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('');
 
       // Display which proxy is being used (if any)
-      let proxyInfo = '<span style="font-size:0.9em;color:var(--gray)">Proxy status: Not initialized</span>';
+      let proxyInfo = '<small>Proxy status: Not initialized or none working</small>';
       if (proxyManager.isInitialized && proxyManager.currentProxy) {
           proxyInfo = proxyManager.currentProxy.url
-            ? `<span style="font-size:0.9em;color:var(--gray)">Using: ${proxyManager.currentProxy.name} proxy</span>`
-            : '<span style="font-size:0.9em;color:var(--gray)">Using: Direct API access</span>';
-      }
-      
-      // Add clinical significance styling
-      let clinicalClass = '';
-      let clinText = clinicalSignificance;
-      if (clinicalSignificance.includes('pathogenic')) {
-        clinicalClass = 'clin-pathogenic';
-      } else if (clinicalSignificance.includes('benign')) {
-        clinicalClass = 'clin-benign';
-      } else if (clinicalSignificance.includes('uncertain')) {
-        clinicalClass = 'clin-uncertain';
+            ? `<small>Using: ${proxyManager.currentProxy.name} proxy</small>`
+            : '<small>Using: Direct API access</small>';
       }
 
       detailsEl.innerHTML = `
-          <h2>
-            Details for ${rsid}
-            <small>${proxyInfo}</small>
-          </h2>
-          
-          ${errorMessages.length > 0 ? 
-            `<div style="padding:12px;background:rgba(230,57,70,0.1);border-radius:var(--radius);margin-bottom:20px;">
-               <strong>⚠️ Note:</strong> ${errorMessages.join('<br>')}
-             </div>` : ''}
-          
-          <div class="external-links">
-            <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a>
-            <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a>
-            <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
-          </div>
-          
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:24px;margin-bottom:24px;">
-            <div>
-              <p><strong>Most Severe Consequence:</strong> ${ensemblInfo.most_severe_consequence || 'N/A'}</p>
-              <p><strong>Ancestral Allele:</strong> ${ensemblInfo.ancestral_allele || 'N/A'}</p>
-              <p><strong>Clinical Significance:</strong> <span class="${clinicalClass}">${clinText}</span></p>
-              <p><strong>Mapped Gene:</strong> ${ensemblInfo.mapped_genes?.[0]?.gene_symbol || 'N/A'}</p>
-            </div>
-            <div>
-              <p><strong>Minor Allele:</strong> ${ensemblInfo.minor_allele || 'N/A'}</p>
-              <p><strong>MAF:</strong> ${ensemblInfo.MAF ? ensemblInfo.MAF.toFixed(4) : 'N/A'}</p>
-              <p><strong>Assembly:</strong> ${ensemblInfo.assembly_name || 'N/A'}</p>
-            </div>
-          </div>
-
+          <h2>Details for ${rsid} ${proxyInfo}</h2>
+          ${errorMessages.length > 0 ? `<p style="color:orange;"><strong>Note:</strong> ${errorMessages.join('<br>')}</p>` : ''}
+          <p><strong>Links:</strong>
+             <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a> |
+             <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a> |
+             <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
+          </p>
+          <p><strong>Most Severe Consequence:</strong> ${ensemblInfo.most_severe_consequence || 'N/A'}</p>
+          <p><strong>Ancestral Allele:</strong> ${ensemblInfo.ancestral_allele || 'N/A'}</p>
+          <p><strong>Clinical Significance:</strong> ${clinicalSignificance}</p>
           <h3>Population Frequencies</h3>
-          <ul class="freq-list">${popFreqHtml}</ul>
-          
+          ${popFreqHtml ? `<ul>${popFreqHtml}</ul>` : '<p>No population frequency data loaded.</p>'}
           <h3>Phenotypes</h3>
-          <ul class="phenotype-list">${phenotypesHtml}</ul>
-          
+          ${phenotypesHtml ? `<ul>${phenotypesHtml}</ul>` : '<p>No phenotype data.</p>'}
           <h3>SNPedia Summary</h3>
-          <div style="padding:16px;background:#f8f9fa;border-radius:var(--radius);">${snpediaSummary.replace(/\n/g, '<br>')}</div>
-          
+          <p>${snpediaSummary.replace(/\n/g, '<br>')}</p>
           <details>
               <summary>Full Ensembl Variation JSON</summary>
               <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
