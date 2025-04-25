@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>DNA Explorer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f7f9fa; }
+    #summary, #table, #charts, #details, #dashboard, #insights, #traits { margin-top: 30px; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #e3eaf1; }
+    #loading { display: none; font-weight: bold; color: blue; margin-top: 15px; }
+    #pagination { margin-top: 10px; }
+    #pagination button { margin: 0 5px; }
+    #dashboard { display: flex; gap: 30px; }
+    .dashboard-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 18px 24px; min-width: 180px; }
+    #insights { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 18px 24px; }
+    #traits { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 18px 24px; }
+    .insight-item { margin-bottom: 12px; }
+    .clin-pathogenic { color: #b71c1c; font-weight: bold; }
+    .clin-benign { color: #388e3c; }
+    .clin-uncertain { color: #fbc02d; }
+    .trait-keyword { background: #e3eaf1; border-radius: 4px; padding: 2px 6px; margin-right: 4px; font-size: 0.95em; }
+    .tab-btn { background: #e3eaf1; border: none; padding: 8px 16px; margin-right: 8px; border-radius: 4px 4px 0 0; cursor: pointer; }
+    .tab-btn.active { background: #fff; border-bottom: 2px solid #1976d2; font-weight: bold; }
+    #tab-content > div { display: none; }
+    #tab-content > .active { display: block; }
+    .tooltip { border-bottom: 1px dotted #888; cursor: help; }
+    .help { color: #1976d2; font-size: 0.95em; margin-left: 8px; }
+    .snp-link { color: #1976d2; text-decoration: underline; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>DNA Explorer <span class="help tooltip" title="Upload your MyHeritage DNA ZIP file to begin.">?</span></h1>
+  <input type="file" id="fileInput" accept=".zip" />
+  <div id="loading">Processing file...</div>
+
+  <div id="dashboard"></div>
+  <div id="insights"></div>
+
+  <div id="filters" style="margin-top:20px;">
+    <input type="text" id="searchInput" placeholder="Search rsID…" />
+    <select id="chromFilter">
+      <option value="">All chromosomes</option>
+    </select>
+    <button id="downloadBtn">Download JSON Report</button>
+  </div>
+
+  <div id="tab-bar" style="margin-top:20px;">
+    <button class="tab-btn active" data-tab="table">All SNPs</button>
+    <button class="tab-btn" data-tab="traits">Health & Traits</button>
+    <button class="tab-btn" data-tab="charts">Charts</button>
+  </div>
+  <div id="tab-content">
+    <div id="table" class="active"></div>
+    <div id="traits"></div>
+    <div id="charts"><canvas id="genoChart" width="600" height="300"></canvas></div>
+  </div>
+  <div id="pagination"></div>
+  <div id="details"></div>
+
+  <script>
+    const loadingEl = document.getElementById('loading');
+    const tableContainer = document.getElementById('table');
+    const paginationEl = document.getElementById('pagination');
+    const detailsEl = document.getElementById('details');
+    const searchInput = document.getElementById('searchInput');
+    const chromFilter = document.getElementById('chromFilter');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const dashboardEl = document.getElementById('dashboard');
+    const insightsEl = document.getElementById('insights');
+    const traitsEl = document.getElementById('traits');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContent = document.getElementById('tab-content').children;
+
+    let allResults = [];
+    let filteredResults = [];
+    let currentPage = 1;
+    const rowsPerPage = 20;
+    let tableEl = null;
+    let clinSummary = [];
+    let traitSummary = [];
+
+    // Tab switching logic
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        Array.from(tabContent).forEach(div => div.classList.remove('active'));
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // Reset UI
+      loadingEl.style.display = 'block';
+      loadingEl.textContent = 'Processing file...';
+      dashboardEl.innerHTML = '';
+      insightsEl.innerHTML = '';
+      document.getElementById('summary')?.remove();
+      tableContainer.innerHTML = '';
+      paginationEl.innerHTML = '';
+      document.getElementById('charts').innerHTML = '<canvas id="genoChart" width="600" height="300"></canvas>';
+      detailsEl.innerHTML = '';
+      searchInput.value = '';
+      chromFilter.value = '';
+      chromFilter.innerHTML = '<option value="">All chromosomes</option>';
+      traitsEl.innerHTML = '';
+
+      try {
+        const data = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(data);
+        const csvName = Object.keys(zip.files).find(n => n.endsWith('.csv'));
+        if (!csvName) throw new Error("No CSV file found in the ZIP.");
+        const csvText = await zip.files[csvName].async('text');
+        const cleanedCsvText = csvText.split('\n').filter(line => !line.startsWith('#')).join('\n');
+        const parseResult = Papa.parse(cleanedCsvText, { header: true, skipEmptyLines: true });
+
+        // Find headers
+        const headers = parseResult.meta.fields.map(h => h.toLowerCase());
+        const rsidHeader = parseResult.meta.fields[headers.indexOf('rsid')] || parseResult.meta.fields[headers.indexOf('rs#')];
+        const chromHeader = parseResult.meta.fields[headers.indexOf('chromosome')];
+        const posHeader = parseResult.meta.fields[headers.indexOf('position')];
+        const genoHeader = parseResult.meta.fields[headers.indexOf('genotype')] || parseResult.meta.fields[headers.indexOf('result')];
+
+        if (!rsidHeader || !chromHeader || !posHeader || !genoHeader) {
+            throw new Error(`Could not find required columns. Detected headers: ${parseResult.meta.fields.join(', ')}. Required (case-insensitive): rsid/rs#, chromosome, position, genotype/result.`);
+        }
+
+        allResults = parseResult.data
+            .filter(r => r[rsidHeader] && r[chromHeader] && r[posHeader] && r[genoHeader])
+            .map(r => ({
+                rsid: r[rsidHeader],
+                chromosome: r[chromHeader],
+                position: r[posHeader],
+                Genotype: r[genoHeader]
+            }));
+
+        filteredResults = [...allResults];
+
+        if (allResults.length === 0) {
+            throw new Error("No valid SNP data rows found after filtering. Check CSV content and headers.");
+        }
+
+        // --- Evaluate and summarize important findings ---
+        clinSummary = [];
+        traitSummary = [];
+        let clinCounts = { pathogenic: 0, likely_pathogenic: 0, benign: 0, uncertain: 0, other: 0 };
+        let traitCounts = {};
+        let ancestryHints = 0;
+        let topInsights = [];
+
+        // We'll fetch clinical significance and trait info for the first 200 SNPs for speed
+        const snpsToCheck = allResults.slice(0, 200);
+
+        // Helper: fetch Ensembl info for a batch of SNPs
+        async function fetchEnsemblBatch(snps) {
+          const proxy = 'https://api.allorigins.win/raw?url=';
+          const promises = snps.map(async snp => {
+            try {
+              const url = `${proxy}${encodeURIComponent('https://rest.ensembl.org/variation/human/' + snp.rsid + '?content-type=application/json')}`;
+              const res = await fetch(url);
+              if (!res.ok) throw new Error('Proxy or Ensembl error');
+              const info = await res.json();
+              return { ...snp, ensembl: info };
+            } catch (err) {
+              // Mark as proxy error for user feedback
+              snp.proxyError = true;
+              return null;
+            }
+          });
+          return (await Promise.all(promises)).filter(Boolean);
+        }
+
+        // Helper: extract trait/health keywords
+        function extractTraits(info) {
+          const keywords = ['height','eye color','hair','lactose','alcohol','caffeine','diabetes','cancer','asthma','skin','obesity','blood','cholesterol','alzheimer','parkinson','celiac','crohn','sickle','thalassemia','hemochromatosis','ancestry','ethnicity','risk','disease','trait','response','drug','immunity','autoimmune'];
+          let found = [];
+          if (info?.phenotypes) {
+            for (const ph of info.phenotypes) {
+              for (const k of keywords) {
+                if (ph.description && ph.description.toLowerCase().includes(k)) found.push(k);
+              }
+            }
+          }
+          return [...new Set(found)];
+        }
+
+        // Fetch and analyze
+        loadingEl.textContent = 'Analyzing clinical significance and traits...';
+        const batch = await fetchEnsemblBatch(snpsToCheck);
+
+        for (const snp of batch) {
+          const info = snp.ensembl;
+          // Clinical significance
+          let clin = (info.clinical_significance || []).map(x => x.toLowerCase());
+          if (clin.includes('pathogenic')) clinCounts.pathogenic++;
+          else if (clin.includes('likely pathogenic')) clinCounts.likely_pathogenic++;
+          else if (clin.includes('benign')) clinCounts.benign++;
+          else if (clin.includes('uncertain significance')) clinCounts.uncertain++;
+          else clinCounts.other++;
+
+          if (clin.length > 0) {
+            clinSummary.push({
+              rsid: snp.rsid,
+              clin,
+              gene: info.mapped_genes?.[0]?.gene_symbol || '',
+              desc: info.most_severe_consequence || '',
+              phenotypes: info.phenotypes || []
+            });
+          }
+
+          // Traits
+          const traits = extractTraits(info);
+          if (traits.length > 0) {
+            traitSummary.push({
+              rsid: snp.rsid,
+              traits,
+              gene: info.mapped_genes?.[0]?.gene_symbol || '',
+              desc: info.most_severe_consequence || '',
+              phenotypes: info.phenotypes || []
+            });
+            for (const t of traits) traitCounts[t] = (traitCounts[t] || 0) + 1;
+          }
+
+          // Ancestry hints
+          if (traits.includes('ancestry') || traits.includes('ethnicity')) ancestryHints++;
+        }
+
+        // Top insights
+        if (clinCounts.pathogenic > 0) topInsights.push(`<span class="clin-pathogenic">${clinCounts.pathogenic} pathogenic SNPs detected</span>`);
+        if (clinCounts.likely_pathogenic > 0) topInsights.push(`<span class="clin-pathogenic">${clinCounts.likely_pathogenic} likely pathogenic SNPs</span>`);
+        if (Object.keys(traitCounts).length > 0) {
+          const topTraits = Object.entries(traitCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k} (${v})`);
+          topInsights.push(`Traits detected: <span class="trait-keyword">${topTraits.join('</span>, <span class="trait-keyword">')}</span>`);
+        }
+        if (ancestryHints > 0) topInsights.push(`${ancestryHints} ancestry/ethnicity-related SNPs found`);
+
+        // --- Dashboard ---
+        dashboardEl.innerHTML = `
+          <div class="dashboard-card">
+            <div style="font-size:2em;font-weight:bold;">${allResults.length}</div>
+            <div>Total SNPs</div>
+          </div>
+          <div class="dashboard-card">
+            <div style="font-size:2em;font-weight:bold;">${clinCounts.pathogenic + clinCounts.likely_pathogenic}</div>
+            <div>Potentially Pathogenic</div>
+          </div>
+          <div class="dashboard-card">
+            <div style="font-size:2em;font-weight:bold;">${Object.keys(traitCounts).length}</div>
+            <div>Traits/Phenotypes</div>
+          </div>
+          <div class="dashboard-card">
+            <div style="font-size:2em;font-weight:bold;">${ancestryHints}</div>
+            <div>Ancestry Markers</div>
+          </div>
+        `;
+
+        // --- Insights ---
+        insightsEl.innerHTML = `
+          <h2>Top Insights</h2>
+          ${topInsights.length ? topInsights.map(i=>`<div class="insight-item">${i}</div>`).join('') : '<div>No high-priority findings in first 200 SNPs.</div>'}
+          <div style="margin-top:10px;font-size:0.95em;color:#888;">(Click a SNP in the table for more details. Only first 200 SNPs are deeply analyzed for speed.)</div>
+        `;
+
+        // --- Traits/Health Tab ---
+        let traitHtml = '';
+        if (traitSummary.length) {
+          traitHtml += `<h2>Health & Traits</h2>`;
+          traitHtml += `<table><tr><th>rsID</th><th>Gene</th><th>Traits</th><th>Phenotypes</th></tr>`;
+          for (const t of traitSummary) {
+            traitHtml += `<tr>
+              <td><span class="snp-link" onclick="fetchDetails('${t.rsid}')">${t.rsid}</span></td>
+              <td>${t.gene}</td>
+              <td>${t.traits.map(tr=>`<span class="trait-keyword">${tr}</span>`).join('')}</td>
+              <td>${t.phenotypes.map(p=>p.description).join('; ')}</td>
+            </tr>`;
+          }
+          traitHtml += `</table>`;
+        } else {
+          traitHtml = `<div>No trait/phenotype associations found in first 200 SNPs.</div>`;
+        }
+        traitsEl.innerHTML = traitHtml;
+
+        // --- Table and rest of UI ---
+        // Basic summary (uses normalized keys now)
+        const total = allResults.length;
+        const homo = allResults.filter(r => r.Genotype && ( (r.Genotype.length === 3 && r.Genotype[0] === r.Genotype[2]) || (r.Genotype.length === 2 && r.Genotype[0] === r.Genotype[1]) ) ).length;
+        const hetero = total - homo;
+
+        tableEl = document.createElement('table');
+        tableEl.innerHTML = `<thead><tr><th>rsID</th><th>Chromosome</th><th>Position</th><th>Genotype</th></tr></thead><tbody></tbody>`;
+        tableContainer.innerHTML = '<h2>SNP Data</h2>';
+        tableContainer.append(tableEl);
+
+        // Populate chromosome filter
+        const chroms = [...new Set(allResults.map(r => r.chromosome))].sort((a, b) => {
+            const na = parseInt(a); const nb = parseInt(b);
+            if (!isNaN(na) && !isNaN(nb)) return na - nb;
+            if (!isNaN(na)) return -1; if (!isNaN(nb)) return 1;
+            return a.localeCompare(b);
+        });
+        chroms.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c; opt.textContent = `Chromosome ${c}`;
+          chromFilter.append(opt);
+        });
+
+        currentPage = 1;
+        renderTablePage();
+        setupPagination();
+
+        // Chart of geno counts
+        const genoChartCtx = document.getElementById('genoChart').getContext('2d');
+        new Chart(genoChartCtx, {
+          type: 'pie',
+          data: {
+            labels: ['Homozygous (approx)', 'Heterozygous (approx)'],
+            datasets: [{ data: [homo, hetero], backgroundColor: ['#66c2a5', '#fc8d62'] }]
+          },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        searchInput.addEventListener('input', handleFilterChange);
+        chromFilter.addEventListener('change', handleFilterChange);
+        downloadBtn.addEventListener('click', downloadReport);
+
+      } catch (error) {
+        dashboardEl.innerHTML = '';
+        insightsEl.innerHTML = '';
+        traitsEl.innerHTML = '';
+        tableContainer.innerHTML = '';
+        paginationEl.innerHTML = '';
+        detailsEl.innerHTML = '';
+        document.getElementById('charts').innerHTML = '';
+        alert("Error: " + error.message);
+      } finally {
+        loadingEl.style.display = 'none';
+      }
+    });
+
+    function handleFilterChange() {
+        const q = searchInput.value.toLowerCase();
+        const cf = chromFilter.value;
+        filteredResults = allResults.filter(r => {
+            const rsidMatch = !q || r.rsid.toLowerCase().includes(q);
+            const chromMatch = !cf || r.chromosome === cf;
+            return rsidMatch && chromMatch;
+        });
+        currentPage = 1;
+        renderTablePage();
+        setupPagination();
+    }
+
+    function renderTablePage() {
+        if (!tableEl) return;
+        const start = (currentPage - 1) * rowsPerPage;
+        const end = start + rowsPerPage;
+        const pageData = filteredResults.slice(start, end);
+
+        const tbody = tableEl.querySelector('tbody');
+        tbody.innerHTML = pageData.map(r => `
+            <tr data-rsid="${r.rsid}" style="cursor:pointer;">
+              <td><span class="snp-link" onclick="fetchDetails('${r.rsid}')">${r.rsid}</span></td>
+              <td>${r.chromosome}</td>
+              <td>${r.position}</td>
+              <td>${r.Genotype}</td>
+            </tr>`).join('');
+
+        // Add click listeners to new rows (for keyboard accessibility)
+        tbody.querySelectorAll('tr[data-rsid]').forEach(row => {
+            row.addEventListener('click', () => fetchDetails(row.dataset.rsid));
+        });
+    }
+
+    function setupPagination() {
+        paginationEl.innerHTML = '';
+        const totalPages = Math.ceil(filteredResults.length / rowsPerPage);
+
+        if (totalPages <= 1) return;
+
+        const prevButton = document.createElement('button');
+        prevButton.textContent = 'Previous';
+        prevButton.disabled = currentPage === 1;
+        prevButton.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTablePage();
+                setupPagination();
+            }
+        });
+        paginationEl.appendChild(prevButton);
+
+        const pageInfo = document.createElement('span');
+        pageInfo.textContent = ` Page ${currentPage} of ${totalPages} `;
+        pageInfo.style.margin = '0 10px';
+        paginationEl.appendChild(pageInfo);
+
+        const nextButton = document.createElement('button');
+        nextButton.textContent = 'Next';
+        nextButton.disabled = currentPage === totalPages;
+        nextButton.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTablePage();
+                setupPagination();
+            }
+        });
+        paginationEl.appendChild(nextButton);
+    }
+
+    function downloadReport() {
+        if (allResults.length === 0) {
+            alert("No data loaded to download.");
+            return;
+        }
+        const dataToDownload = allResults;
+        const blob = new Blob([JSON.stringify(dataToDownload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'dna_report.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // Make fetchDetails globally accessible for trait/health tab
+    window.fetchDetails = fetchDetails;
+
+    async function fetchDetails(rsid) {
+        detailsEl.innerHTML = `<p>Loading details for ${rsid}…</p>`;
+        let ensemblInfo = {};
+        let popFreq = {};
+        let snpediaSummary = 'Could not fetch SNPedia summary.';
+        let errorMessages = [];
+        const proxy = 'https://api.allorigins.win/raw?url=';
+
+        try {
+            const url = `${proxy}${encodeURIComponent('https://rest.ensembl.org/variation/human/' + rsid + '?content-type=application/json')}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Proxy or Ensembl API error (${res.status})`);
+            ensemblInfo = await res.json();
+        } catch (err) {
+            errorMessages.push(`Failed to fetch Ensembl variation data (proxy or Ensembl error): ${err.message}`);
+        }
+
+        if (ensemblInfo.name) {
+             try {
+                const url = `${proxy}${encodeURIComponent('https://rest.ensembl.org/variation/human/' + rsid + '?pops=1;content-type=application/json')}`;
+                const pfRes = await fetch(url);
+                if (!pfRes.ok) throw new Error(`Proxy or Ensembl PopFreq API error (${pfRes.status})`);
+                const pfData = await pfRes.json();
+                if (pfData.populations) {
+                     popFreq = pfData.populations.reduce((acc, p) => {
+                        acc[p.population] = p.frequency !== undefined ? p.frequency.toFixed(4) : 'N/A';
+                        return acc;
+                    }, {});
+                } else {
+                     popFreq = { 'Info': 'No population data available.' };
+                }
+            } catch (err) {
+                errorMessages.push(`Failed to fetch population frequencies (proxy or Ensembl error): ${err.message}`);
+                popFreq = { 'Error': 'Could not load data.' };
+            }
+        } else {
+             popFreq = { 'Info': 'Skipped due to variation fetch error.' };
+        }
+
+        try {
+            const spRes = await fetch(`https://en.wikipedia.org/w/api.php?` +
+                new URLSearchParams({
+                    action: 'query', prop: 'extracts', format: 'json',
+                    titles: rsid, origin: '*', exintro: '', explaintext: ''
+                }));
+            if (!spRes.ok) throw new Error(`Wikipedia API error (${spRes.status})`);
+            const wpData = await spRes.json();
+            const pages = wpData.query?.pages || {};
+            const page = Object.values(pages)[0];
+            if (page && !page.missing && page.extract) {
+                snpediaSummary = page.extract;
+            } else {
+                 snpediaSummary = 'No SNPedia article found or summary available.';
+            }
+        } catch (err) {
+            errorMessages.push(`Failed to fetch SNPedia summary: ${err.message}`);
+        }
+
+        const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'none';
+        const popFreqHtml = Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('');
+        const phenotypesHtml = (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('');
+
+        detailsEl.innerHTML = `
+            <h2>Details for ${rsid}</h2>
+            ${errorMessages.length > 0 ? `<p style="color:orange;"><strong>Note:</strong> ${errorMessages.join('<br>')}<br>
+            If this persists, try running this app from a local web server or use your own CORS proxy.</p>` : ''}
+            <p><strong>Links:</strong>
+               <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a> |
+               <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a> |
+               <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
+            </p>
+            <p><strong>Most Severe Consequence:</strong> ${ensemblInfo.most_severe_consequence || 'N/A'}</p>
+            <p><strong>Ancestral Allele:</strong> ${ensemblInfo.ancestral_allele || 'N/A'}</p>
+            <p><strong>Clinical Significance:</strong> ${clinicalSignificance}</p>
+            <h3>Population Frequencies</h3>
+            ${popFreqHtml ? `<ul>${popFreqHtml}</ul>` : '<p>No population frequency data loaded.</p>'}
+            <h3>Phenotypes</h3>
+            ${phenotypesHtml ? `<ul>${phenotypesHtml}</ul>` : '<p>No phenotype data.</p>'}
+            <h3>SNPedia Summary</h3>
+            <p>${snpediaSummary.replace(/\n/g, '<br>')}</p>
+            <details>
+                <summary>Full Ensembl Variation JSON</summary>
+                <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
+            </details>
+        `;
+    }
+  </script>
+</body>
+</html>
