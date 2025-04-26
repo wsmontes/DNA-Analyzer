@@ -4,43 +4,22 @@
  * Prioritizes genes based on medical relevance and known associations
  */
 
+import KnownGenes from '../data/knownGenes.js';
+
 const GenePrioritizer = {
-  // List of high-priority genes with known clinical significance
-  highPriorityGenes: [
-    // Cancer-related genes
-    'BRCA1', 'BRCA2', 'TP53', 'APC', 'MLH1', 'MSH2', 'MSH6', 'PMS2', 'PTEN', 'RB1', 'PALB2',
-    // Cardiovascular disease genes
-    'APOE', 'LDLR', 'PCSK9', 'APOB', 'MYBPC3', 'MYH7', 'TNNT2', 'LMNA',
-    // Neurodegenerative disease genes
-    'APP', 'PSEN1', 'PSEN2', 'MAPT', 'SNCA', 'HTT', 'C9orf72',
-    // Metabolic disorder genes
-    'PAH', 'CFTR', 'HFE', 'G6PD', 'MTHFR', 'HBB', 'HBA1', 'HBA2',
-    // Pharmacogenomic genes 
-    'CYP2D6', 'CYP2C19', 'CYP2C9', 'VKORC1', 'TPMT', 'DPYD', 'UGT1A1', 'SLCO1B1'
-  ],
-  
-  // Gene categories for better organization
-  geneCategories: {
-    'Cancer': ['BRCA1', 'BRCA2', 'TP53', 'APC', 'MLH1', 'MSH2', 'MSH6', 'PMS2', 'PTEN', 'RB1', 'PALB2'],
-    'Cardiovascular': ['APOE', 'LDLR', 'PCSK9', 'APOB', 'MYBPC3', 'MYH7', 'TNNT2', 'LMNA'],
-    'Neurodegenerative': ['APP', 'PSEN1', 'PSEN2', 'MAPT', 'SNCA', 'HTT', 'C9orf72'],
-    'Metabolic': ['PAH', 'CFTR', 'HFE', 'G6PD', 'MTHFR', 'HBB', 'HBA1', 'HBA2'],
-    'Pharmacogenomic': ['CYP2D6', 'CYP2C19', 'CYP2C9', 'VKORC1', 'TPMT', 'DPYD', 'UGT1A1', 'SLCO1B1']
+  // Get high priority genes from the imported database
+  get highPriorityGenes() {
+    return KnownGenes.getAllHighPriorityGenes();
   },
   
-  // Gene descriptions for user-friendly displays
-  geneDescriptions: {
-    'BRCA1': 'Breast cancer susceptibility gene 1',
-    'BRCA2': 'Breast cancer susceptibility gene 2',
-    'APOE': 'Apolipoprotein E - affects Alzheimer\'s risk and cholesterol metabolism',
-    'MTHFR': 'Methylenetetrahydrofolate reductase - affects folate metabolism',
-    'CFTR': 'Cystic fibrosis transmembrane conductance regulator',
-    'HFE': 'Hemochromatosis gene - affects iron absorption',
-    'TP53': 'Tumor protein p53 - guardian of the genome, prevents cancer formation',
-    'CYP2D6': 'Key drug metabolism enzyme affecting ~25% of prescription drugs',
-    'CYP2C19': 'Important for metabolism of antidepressants and other drugs',
-    'VKORC1': 'Vitamin K epoxide reductase - affects warfarin (blood thinner) response',
-    // Additional descriptions would be added for all genes
+  // Gene categories from the database
+  get geneCategories() {
+    return KnownGenes.highPriorityGenes;
+  },
+  
+  // Gene descriptions from the database
+  get geneDescriptions() {
+    return KnownGenes.geneDescriptions;
   },
   
   /**
@@ -74,15 +53,7 @@ const GenePrioritizer = {
    */
   getCategory(gene) {
     if (!gene) return "Other";
-    const normalizedGene = gene.toUpperCase();
-    
-    for (const [category, genes] of Object.entries(this.geneCategories)) {
-      if (genes.includes(normalizedGene)) {
-        return category;
-      }
-    }
-    
-    return "Other";
+    return KnownGenes.getGeneCategory(gene);
   },
   
   /**
@@ -92,7 +63,7 @@ const GenePrioritizer = {
    */
   getDescription(gene) {
     if (!gene) return "";
-    return this.geneDescriptions[gene.toUpperCase()] || "";
+    return KnownGenes.getGeneDescription(gene);
   },
   
   /**

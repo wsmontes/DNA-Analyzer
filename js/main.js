@@ -1,7 +1,7 @@
 /**
  * DNA Explorer - Main Application
  * 
- * Automated workflow with comprehensive analysis and API logging
+ * Enhanced with API diagnostics and robust gene discovery
  */
 
 import ProxyManager from './modules/proxyManager.js';
@@ -11,12 +11,14 @@ import FileProcessor from './modules/fileProcessor.js';
 import ChartManager from './modules/chartManager.js';
 import SNPediaManager from './modules/snpediaManager.js';
 import GeneDiscovery from './modules/geneDiscovery.js';
+import APIDiagnostics from './modules/apiDiagnostics.js';
 import Logger from './modules/logger.js';
 
 // Expose modules for easier debugging in console
 window.proxyManager = ProxyManager;
 window.logger = Logger;
 window.dataManager = DataManager;
+window.apiDiagnostics = APIDiagnostics;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,9 +29,30 @@ document.addEventListener('DOMContentLoaded', () => {
   ChartManager.init();
   DataManager.init();
   SNPediaManager.init();
+  
+  // Initialize API diagnostics
+  APIDiagnostics.init({
+    snpedia: document.getElementById('snpedia-status'),
+    ensembl: document.getElementById('ensembl-status'),
+    geneDb: document.getElementById('gene-db-status')
+  });
 
   // Initialize the ProxyManager in the background
   ProxyManager.initialize();
+  
+  // Test API connections
+  APIDiagnostics.checkAllConnections()
+    .then(results => {
+      Logger.info('API connection check results:', results);
+      // If SNPedia is down, show a warning
+      if (!results.snpedia?.ok) {
+        Logger.warn('SNPedia connection failed. Gene discovery may be limited.');
+        APIDiagnostics.logToDebugPanel('SNPedia connection failed. Gene discovery may be limited.', 'warning');
+      }
+    })
+    .catch(err => {
+      Logger.error('Error checking API connections:', err);
+    });
 
   // Add SNPedia attribution to the footer
   addSNPediaAttribution();
@@ -52,45 +75,71 @@ document.addEventListener('DOMContentLoaded', () => {
       UIManager.goToStep('processing');
       
       // Step 2: Process DNA file
-      UIManager.showLoading('Lendo arquivo de DNA...');
+      UIManager.showLoading('Reading DNA file...');
       const dnaData = await FileProcessor.processDnaFile(file);
       
       // Update status with initial counts
-      UIManager.updateStatusMessage(`Processados ${dnaData.length.toLocaleString()} SNPs`);
+      UIManager.updateStatusMessage(`Processed ${dnaData.length.toLocaleString()} SNPs`);
+      Logger.info(`Processed ${dnaData.length} SNPs from file ${file.name}`);
+      
+      // Check connection status before proceeding
+      APIDiagnostics.logToDebugPanel('Checking API connections before analysis...', 'info');
+      const apiStatus = await APIDiagnostics.checkAllConnections();
       
       // Initialize connection to external APIs
       UIManager.updateProgress({ 
         loaded: 0,
         total: 4,
-        stage: 'Estabelecendo conexões com APIs...'
+        stage: 'Establishing API connections...'
       });
       
       const proxyReady = await ProxyManager.initialize();
       if (!proxyReady) {
-        UIManager.updateStatusMessage('Aviso: Conectividade de API limitada');
+        UIManager.updateStatusMessage('Warning: Limited API connectivity');
+        APIDiagnostics.logToDebugPanel('Proxy initialization failed. Using direct connections.', 'warning');
       } else {
-        UIManager.updateStatusMessage('Conexões com APIs estabelecidas');
+        UIManager.updateStatusMessage('API connections established');
+        APIDiagnostics.logToDebugPanel('Proxy initialized successfully.', 'success');
       }
       
       // Step 3: Comprehensive analysis of SNPs against SNPedia database
       UIManager.updateProgress({ 
         loaded: 1,
         total: 4,
-        stage: 'Iniciando análise abrangente...'
+        stage: 'Starting comprehensive analysis...'
       });
+      
+      // Log a sample of the DNA data
+      Logger.debug('DNA data sample:', dnaData.slice(0, 3));
       
       const analysisResults = await FileProcessor.analyzeDnaData(dnaData, progress => {
         UIManager.updateProgress({
           ...progress,
-          total: progress.total || 'continua',
+          total: progress.total || 'ongoing',
           loaded: progress.loaded || 0
         });
+        
+        // Also log progress to debug panel
+        if (progress.stage && progress.stage !== 'last-stage') {
+          APIDiagnostics.logToDebugPanel(progress.stage, 'info');
+          // Store last stage to avoid duplicate logs
+          window.lastStage = progress.stage;
+        }
+      });
+      
+      // Log analysis completion
+      Logger.info('DNA analysis complete with results:', {
+        snpCount: analysisResults.allResults.length,
+        clinicalFindings: Object.keys(analysisResults.clinCounts).map(k => 
+          `${k}: ${analysisResults.clinCounts[k]}`).join(', '),
+        traitCount: Object.keys(analysisResults.traitCounts).length,
+        error: analysisResults.error
       });
       
       UIManager.updateProgress({ 
         loaded: 2,
         total: 4,
-        stage: 'Gerando visualizações...'
+        stage: 'Generating visualizations...'
       });
       
       // Create charts
@@ -106,16 +155,39 @@ document.addEventListener('DOMContentLoaded', () => {
       UIManager.updateProgress({ 
         loaded: 3,
         total: 4,
-        stage: 'Descobrindo genes relevantes...'
+        stage: 'Discovering relevant genes...'
       });
       
       // Initialize the gene discovery module with user data
       GeneDiscovery.init(dnaData);
+      APIDiagnostics.logToDebugPanel('Gene discovery started...', 'info');
       
       // Discover relevant genes with progress reporting
       const geneResults = await GeneDiscovery.discoverRelevantGenes(progress => {
         UIManager.updateDiscoveryProgress(progress);
+        
+        // Log significant stages to debug panel
+        if (progress.stage && progress.stage.includes('complete') || 
+            progress.stage && progress.stage.includes('Found')) {
+          APIDiagnostics.logToDebugPanel(progress.stage, 'info');
+        }
       });
+      
+      // Log gene discovery results
+      Logger.info('Gene discovery complete:', {
+        totalSnps: geneResults.stats?.totalFound || 0,
+        geneCount: geneResults.stats?.geneCount || 0,
+        error: geneResults.error
+      });
+      
+      if (geneResults.error) {
+        APIDiagnostics.logToDebugPanel(`Gene discovery error: ${geneResults.error}`, 'error');
+      } else {
+        APIDiagnostics.logToDebugPanel(
+          `Gene discovery found ${geneResults.stats?.totalFound || 0} SNPs in ${geneResults.stats?.geneCount || 0} genes`, 
+          'success'
+        );
+      }
       
       // Step 5: Store gene results and update the UI
       DataManager.geneDiscoveryResults = geneResults;
@@ -128,11 +200,12 @@ document.addEventListener('DOMContentLoaded', () => {
       UIManager.displayGeneResults(geneResults);
       
       // Show success message
-      UIManager.updateStatusMessage('Análise completa - Explore seus resultados');
+      UIManager.updateStatusMessage('Analysis complete - Explore your results');
       
     } catch (error) {
-      console.error("Erro ao processar DNA:", error);
+      console.error("Error processing DNA:", error);
       UIManager.showError(error.message);
+      APIDiagnostics.logToDebugPanel(`Error: ${error.message}`, 'error');
     }
   });
 
@@ -141,7 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await UIManager.fetchDetails(rsid);
   };
   
-  console.log('DNA Explorer inicializado com sucesso!');
+  console.log('DNA Explorer initialized successfully!');
 });
 
 // Function to add SNPedia attribution
@@ -177,6 +250,10 @@ function addLogViewerButton() {
     console.log('Error Responses:', Logger.getApiLogs('error'));
     console.log('Cache Hits:', Logger.getApiLogs('cache'));
     
+    // Add API diagnostics
+    const apiStatus = window.apiDiagnostics.lastStatus;
+    console.log('Current API Status:', apiStatus);
+    
     // MediaWiki API help
     console.log('MediaWiki API Documentation: https://www.mediawiki.org/wiki/API');
     console.log('SNPedia API Endpoint: https://bots.snpedia.com/api.php');
@@ -185,4 +262,30 @@ function addLogViewerButton() {
   });
   
   footer.appendChild(logButton);
+  
+  // Add diagnostics button
+  const diagButton = document.createElement('button');
+  diagButton.className = 'btn btn-sm btn-outline';
+  diagButton.innerText = 'Test APIs';
+  diagButton.addEventListener('click', async () => {
+    diagButton.disabled = true;
+    diagButton.textContent = 'Testing...';
+    try {
+      const results = await APIDiagnostics.checkAllConnections();
+      console.log('API Connection Test Results:', results);
+      alert(
+        `SNPedia: ${results.snpedia?.ok ? 'Connected' : 'Failed'}\n` +
+        `Ensembl: ${results.ensembl?.ok ? 'Connected' : 'Failed'}\n` +
+        `Gene DB: ${results.geneDb?.ok ? 'Connected' : 'Failed'}`
+      );
+    } catch (err) {
+      console.error('API test error:', err);
+      alert('API test failed: ' + err.message);
+    } finally {
+      diagButton.disabled = false;
+      diagButton.textContent = 'Test APIs';
+    }
+  });
+  
+  footer.appendChild(diagButton);
 }

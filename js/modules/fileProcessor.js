@@ -1,60 +1,212 @@
 /**
  * FileProcessor
  * 
- * Processa arquivos DNA, extrai dados e executa análises
+ * Enhanced to handle different DNA file formats and provide better error handling
  */
 import DataManager from './dataManager.js';
 import ChartManager from './chartManager.js';
 import SNPediaManager from './snpediaManager.js';
+import Logger from './logger.js';
 
 const FileProcessor = {
-  // Processar arquivo DNA (ZIP do MyHeritage)
+  // Process DNA file with improved format detection
   async processDnaFile(file) {
     try {
-      const data = await file.arrayBuffer();
-      const zip = await JSZip.loadAsync(data);
-      const csvName = Object.keys(zip.files).find(n => n.endsWith('.csv'));
+      Logger.info(`Processing file: ${file.name} (${file.size} bytes, type: ${file.type})`);
       
-      if (!csvName) throw new Error("Nenhum arquivo CSV encontrado no ZIP.");
+      // Determine file type based on extension
+      const fileExtension = file.name.split('.').pop().toLowerCase();
       
-      const csvText = await zip.files[csvName].async('text');
-      const cleanedCsvText = csvText.split('\n').filter(line => !line.startsWith('#')).join('\n');
-      const parseResult = Papa.parse(cleanedCsvText, { header: true, skipEmptyLines: true });
-
-      // Encontrar cabeçalhos
-      const headers = parseResult.meta.fields.map(h => h.toLowerCase());
-      const rsidHeader = parseResult.meta.fields[headers.indexOf('rsid')] || parseResult.meta.fields[headers.indexOf('rs#')];
-      const chromHeader = parseResult.meta.fields[headers.indexOf('chromosome')];
-      const posHeader = parseResult.meta.fields[headers.indexOf('position')];
-      const genoHeader = parseResult.meta.fields[headers.indexOf('genotype')] || parseResult.meta.fields[headers.indexOf('result')];
-
-      if (!rsidHeader || !chromHeader || !posHeader || !genoHeader) {
-          throw new Error(`Não foi possível encontrar as colunas necessárias. Cabeçalhos detectados: ${parseResult.meta.fields.join(', ')}. Necessários (case-insensitive): rsid/rs#, chromosome, position, genotype/result.`);
+      if (fileExtension === 'zip') {
+        return this.processZipFile(file);
+      } else if (fileExtension === 'csv' || fileExtension === 'txt') {
+        return this.processCSVFile(file);
+      } else if (fileExtension === 'vcf') {
+        return this.processVCFFile(file);
+      } else {
+        throw new Error(`Unsupported file format: ${fileExtension}. Please upload .zip, .csv, .txt or .vcf files.`);
       }
-
-      DataManager.allResults = parseResult.data
-          .filter(r => r[rsidHeader] && r[chromHeader] && r[posHeader] && r[genoHeader])
-          .map(r => ({
-              rsid: r[rsidHeader],
-              chromosome: r[chromHeader],
-              position: r[posHeader],
-              Genotype: r[genoHeader]
-          }));
-
-      DataManager.filteredResults = [...DataManager.allResults];
-
-      if (DataManager.allResults.length === 0) {
-          throw new Error("Nenhuma linha de dados SNP válida encontrada após a filtragem. Verifique o conteúdo do CSV e os cabeçalhos.");
-      }
-
-      return DataManager.allResults;
     } catch (error) {
-      console.error("Erro ao processar arquivo DNA:", error);
+      Logger.error("Error processing DNA file:", error);
       throw error;
     }
   },
 
-  // Analisar dados para insights - versão aprimorada para análise completa
+  // Process ZIP file (MyHeritage, etc.)
+  async processZipFile(file) {
+    try {
+      const data = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(data);
+      
+      // Look for any CSV, TXT or other data files
+      const csvName = Object.keys(zip.files).find(n => 
+        n.endsWith('.csv') || n.endsWith('.txt') || n.includes('dna') || n.includes('genome')
+      );
+      
+      if (!csvName) throw new Error("No data file found in the ZIP. Please ensure the ZIP contains a CSV or TXT file with DNA data.");
+      
+      Logger.info(`Found data file in ZIP: ${csvName}`);
+      const csvText = await zip.files[csvName].async('text');
+      
+      // Process the CSV text
+      return this.processRawCSV(csvText);
+    } catch (error) {
+      Logger.error("Error processing ZIP file:", error);
+      throw new Error(`Failed to process ZIP file: ${error.message}`);
+    }
+  },
+  
+  // Process CSV or TXT file directly
+  async processCSVFile(file) {
+    try {
+      const text = await file.text();
+      return this.processRawCSV(text);
+    } catch (error) {
+      Logger.error("Error processing CSV/TXT file:", error);
+      throw new Error(`Failed to process CSV/TXT file: ${error.message}`);
+    }
+  },
+  
+  // Process VCF file (more complex format used by some providers)
+  async processVCFFile(file) {
+    try {
+      const text = await file.text();
+      const lines = text.split('\n');
+      
+      // Filter out header lines and comments
+      const dataLines = lines.filter(line => !line.startsWith('#') && line.trim().length > 0);
+      
+      // Map VCF data to our standard format
+      const results = dataLines.map(line => {
+        const fields = line.split('\t');
+        // VCF format: CHROM POS ID REF ALT QUAL FILTER INFO FORMAT SAMPLE
+        if (fields.length < 5) return null;
+        
+        return {
+          rsid: fields[2].startsWith('rs') ? fields[2] : `rs${fields[2]}`,
+          chromosome: fields[0],
+          position: fields[1],
+          Genotype: fields[3] + fields[4] // REF + ALT as a simple approximation
+        };
+      }).filter(Boolean);
+      
+      Logger.info(`Processed ${results.length} SNPs from VCF file`);
+      
+      if (results.length === 0) {
+        throw new Error("No valid SNP data found in the VCF file.");
+      }
+      
+      DataManager.allResults = results;
+      DataManager.filteredResults = [...results];
+      
+      return results;
+    } catch (error) {
+      Logger.error("Error processing VCF file:", error);
+      throw new Error(`Failed to process VCF file: ${error.message}`);
+    }
+  },
+  
+  // Process raw CSV text with more flexible format detection
+  processRawCSV(csvText) {
+    try {
+      // Remove comment lines starting with # for better parsing
+      const cleanedCsvText = csvText.split('\n')
+        .filter(line => !line.startsWith('#') && line.trim().length > 0)
+        .join('\n');
+      
+      // Parse CSV with PapaParse
+      const parseResult = Papa.parse(cleanedCsvText, { 
+        header: true, 
+        skipEmptyLines: true,
+        error: (error) => {
+          Logger.error("CSV parsing error:", error);
+        }
+      });
+      
+      if (parseResult.errors && parseResult.errors.length > 0) {
+        Logger.warn(`CSV parsing had ${parseResult.errors.length} errors:`, 
+          parseResult.errors.slice(0, 3));
+      }
+      
+      // Get all headers and normalize them to lowercase for case-insensitive matching
+      const headers = parseResult.meta.fields.map(h => h.toLowerCase());
+      Logger.debug("Detected headers:", headers);
+      
+      // Match headers with flexible options
+      const rsidHeader = this.findMatchingHeader(parseResult.meta.fields, 
+        ['rsid', 'rs#', 'rs_id', 'snp', 'snp_id', 'marker', 'snp name', 'id']);
+        
+      const chromHeader = this.findMatchingHeader(parseResult.meta.fields, 
+        ['chromosome', 'chrom', 'chr', 'chromosome name', 'chromosome number']);
+        
+      const posHeader = this.findMatchingHeader(parseResult.meta.fields, 
+        ['position', 'pos', 'bp', 'position (bp)', 'bp position']);
+        
+      const genoHeader = this.findMatchingHeader(parseResult.meta.fields, 
+        ['genotype', 'result', 'allele', 'alleles', 'call', 'geno', 'snp result']);
+
+      if (!rsidHeader || !chromHeader || !posHeader || !genoHeader) {
+        throw new Error(`Could not find required columns. Detected headers: ${parseResult.meta.fields.join(', ')}. 
+          Required: rsid/marker, chromosome, position, genotype/result.`);
+      }
+      
+      Logger.info(`Matched headers: rsid=${rsidHeader}, chrom=${chromHeader}, pos=${posHeader}, geno=${genoHeader}`);
+
+      // Extract data with matched headers
+      const results = parseResult.data
+        .filter(r => r[rsidHeader] && r[chromHeader] && r[posHeader] && r[genoHeader])
+        .map(r => ({
+          rsid: r[rsidHeader],
+          chromosome: r[chromHeader],
+          position: r[posHeader],
+          Genotype: r[genoHeader]
+        }));
+
+      if (results.length === 0) {
+        throw new Error("No valid SNP data found after filtering. Please check the file content.");
+      }
+      
+      Logger.info(`Processed ${results.length} SNPs from CSV data`);
+      
+      // Set results in DataManager
+      DataManager.allResults = results;
+      DataManager.filteredResults = [...results];
+
+      return results;
+    } catch (error) {
+      Logger.error("Error processing CSV data:", error);
+      throw error;
+    }
+  },
+  
+  // Find matching header from a list of options (case-insensitive)
+  findMatchingHeader(headers, options) {
+    // Create a map of lowercase header to actual header for case-insensitive lookup
+    const headerMap = {};
+    headers.forEach(h => headerMap[h.toLowerCase()] = h);
+    
+    // Try each option
+    for (const option of options) {
+      if (headerMap[option.toLowerCase()]) {
+        return headerMap[option.toLowerCase()];
+      }
+    }
+    
+    // Try partial matches if exact match fails
+    for (const option of options) {
+      const partialMatches = headers.filter(h => 
+        h.toLowerCase().includes(option.toLowerCase()) || 
+        option.toLowerCase().includes(h.toLowerCase())
+      );
+      if (partialMatches.length > 0) {
+        return partialMatches[0];
+      }
+    }
+    
+    return null;
+  },
+
+  // Analyze DNA data for insights with improved error handling
   async analyzeDnaData(allResults, progressCallback) {
     // Initialize counters and storage
     const clinSummary = [];
@@ -306,7 +458,7 @@ const FileProcessor = {
       };
     } catch (error) {
       Logger.error("Error in comprehensive analysis:", error);
-      topInsights.push(`<span class="error-message">Erro durante análise completa: ${error.message}</span>`);
+      topInsights.push(`<span class="error-message">Analysis error: ${error.message}</span>`);
       
       // Add helpful fallback insights even when we encounter an error
       topInsights.push(`<span class="insight-highlight">Found ${allResults.length} SNPs in your DNA file.</span>`);

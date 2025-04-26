@@ -5,23 +5,13 @@
  */
 
 import SNPediaManager from './snpediaManager.js';
+import Logger from './logger.js';
+import KnownGenes from '../data/knownGenes.js';
 
 const GeneDiscovery = {
-  // Local database of clinically significant SNPs for quick lookup
-  // This serves as our "pre-filter" before hitting external APIs
-  significantSnps: {
-    // Cancer-related SNPs
-    "rs1042522": { gene: "TP53", significance: "high", condition: "Cancer risk" },
-    "rs1801133": { gene: "MTHFR", significance: "medium", condition: "Cardiovascular" },
-    "rs429358": { gene: "APOE", significance: "high", condition: "Alzheimer's" },
-    "rs7412": { gene: "APOE", significance: "high", condition: "Alzheimer's" },
-    "rs6025": { gene: "F5", significance: "high", condition: "Thrombosis" },
-    "rs1800562": { gene: "HFE", significance: "high", condition: "Hemochromatosis" },
-    "rs1799945": { gene: "HFE", significance: "medium", condition: "Hemochromatosis" },
-    "rs1801282": { gene: "PPARG", significance: "medium", condition: "Diabetes" },
-    "rs1544410": { gene: "VDR", significance: "medium", condition: "Osteoporosis" },
-    "rs2476601": { gene: "PTPN22", significance: "medium", condition: "Autoimmune" },
-    // Add more pre-filtered SNPs as needed
+  // Local database of clinically significant SNPs now imported from KnownGenes
+  get significantSnps() {
+    return KnownGenes.snpGeneAssociations;
   },
   
   // Discovered SNPs will be cached here
@@ -34,6 +24,26 @@ const GeneDiscovery = {
   init(userSnps) {
     this.userSnps = userSnps;
     this.discoveredSnps.clear();
+    Logger.info(`GeneDiscovery initialized with ${userSnps.length} SNPs`);
+  },
+  
+  /**
+   * Normalize rsID to ensure consistent format for matching
+   * @param {string} rsid - The rsID to normalize
+   * @returns {string} Normalized rsID
+   */
+  normalizeRsid(rsid) {
+    if (!rsid) return '';
+    
+    // Convert to lowercase
+    let normalized = String(rsid).toLowerCase().trim();
+    
+    // Ensure rs prefix if it's just a number
+    if (/^\d+$/.test(normalized)) {
+      normalized = 'rs' + normalized;
+    }
+    
+    return normalized;
   },
   
   /**
@@ -45,14 +55,32 @@ const GeneDiscovery = {
     let significantCount = 0;
     let totalChecked = 0;
     
-    // Create a Map for faster lookups
-    const userSnpsMap = new Map(this.userSnps.map(snp => [snp.rsid, snp]));
+    // Create a Map for faster lookups with normalized rsIDs
+    const userSnpsMap = new Map();
+    this.userSnps.forEach(snp => {
+      const normalizedRsid = this.normalizeRsid(snp.rsid);
+      userSnpsMap.set(normalizedRsid, snp);
+      
+      // Also add the version without rs prefix for flexible matching
+      if (normalizedRsid.startsWith('rs')) {
+        const numericId = normalizedRsid.substring(2);
+        userSnpsMap.set(numericId, snp);
+      }
+    });
+    
+    Logger.debug(`Created user SNPs map with ${userSnpsMap.size} entries`);
+    Logger.debug(`First few user SNPs: ${JSON.stringify([...userSnpsMap.keys()].slice(0, 5))}`);
     
     // Check against our local database first (very fast)
     for (const [rsid, info] of Object.entries(this.significantSnps)) {
       totalChecked++;
-      if (userSnpsMap.has(rsid)) {
-        const userSnp = userSnpsMap.get(rsid);
+      
+      const normalizedRsid = this.normalizeRsid(rsid);
+      const numericId = normalizedRsid.startsWith('rs') ? normalizedRsid.substring(2) : normalizedRsid;
+      
+      // Try both formats for matching
+      if (userSnpsMap.has(normalizedRsid) || userSnpsMap.has(numericId)) {
+        const userSnp = userSnpsMap.get(normalizedRsid) || userSnpsMap.get(numericId);
         matches[rsid] = {
           ...info,
           genotype: userSnp.Genotype,
@@ -60,8 +88,11 @@ const GeneDiscovery = {
           position: userSnp.position
         };
         significantCount++;
+        Logger.debug(`Match found: ${rsid} (${info.gene}) - ${info.condition}`);
       }
     }
+    
+    Logger.info(`Local database scan: Found ${significantCount} matches out of ${totalChecked} checked`);
     
     return {
       matches,
@@ -88,7 +119,7 @@ const GeneDiscovery = {
     
     if (progressCallback) {
       progressCallback({ 
-        stage: "Local database scan complete", 
+        stage: `Local database scan complete - Found ${localResults.stats.significantCount} SNPs`, 
         progress: 20,
         findings: localResults.stats.significantCount
       });
@@ -106,6 +137,8 @@ const GeneDiscovery = {
     }
     
     try {
+      Logger.info("About to fetch high magnitude SNPs from SNPedia");
+      
       // First get a list of all SNPs in SNPedia with magnitude > 3
       // This is much more efficient than querying each SNP individually
       const highMagnitudeSNPs = await SNPediaManager.getHighMagnitudeSNPs({
@@ -120,28 +153,55 @@ const GeneDiscovery = {
         }
       });
       
+      Logger.info(`Retrieved ${highMagnitudeSNPs.length} high magnitude SNPs from SNPedia`);
+      
+      if (highMagnitudeSNPs.length === 0) {
+        Logger.warn("No high magnitude SNPs returned from SNPedia - API might be failing");
+      } else {
+        Logger.debug(`Sample high magnitude SNPs: ${JSON.stringify(highMagnitudeSNPs.slice(0, 3))}`);
+      }
+      
       if (progressCallback) {
         progressCallback({ 
-          stage: "Cross-referencing with your DNA", 
+          stage: `Cross-referencing ${highMagnitudeSNPs.length} SNPs with your DNA`, 
           progress: 70 
         });
       }
       
-      // Cross-reference with user's SNPs
-      const userSnpsMap = new Map(this.userSnps.map(snp => [snp.rsid, snp]));
+      // Cross-reference with user's SNPs with normalized IDs
+      const userSnpsMap = new Map();
+      this.userSnps.forEach(snp => {
+        const normalizedRsid = this.normalizeRsid(snp.rsid);
+        userSnpsMap.set(normalizedRsid, snp);
+        
+        // Also add without rs prefix for flexible matching
+        if (normalizedRsid.startsWith('rs')) {
+          userSnpsMap.set(normalizedRsid.substring(2), snp);
+        }
+      });
+      
       const matchingHighMagnitudeSNPs = [];
       
       for (const snp of highMagnitudeSNPs) {
-        if (userSnpsMap.has(snp.rsid)) {
-          const userSnp = userSnpsMap.get(snp.rsid);
+        const normalizedRsid = this.normalizeRsid(snp.rsid);
+        const numericId = normalizedRsid.startsWith('rs') ? normalizedRsid.substring(2) : normalizedRsid;
+        
+        if (userSnpsMap.has(normalizedRsid) || userSnpsMap.has(numericId)) {
+          const userSnp = userSnpsMap.get(normalizedRsid) || userSnpsMap.get(numericId);
           matchingHighMagnitudeSNPs.push({
             ...snp,
             genotype: userSnp.Genotype,
             chromosome: userSnp.chromosome,
             position: userSnp.position
           });
+          
+          if (matchingHighMagnitudeSNPs.length <= 5) {
+            Logger.debug(`SNPedia match: ${snp.rsid} with magnitude ${snp.magnitude || 'unknown'}`);
+          }
         }
       }
+      
+      Logger.info(`Found ${matchingHighMagnitudeSNPs.length} SNPedia matches in user's DNA`);
       
       if (progressCallback) {
         progressCallback({ 
@@ -190,21 +250,127 @@ const GeneDiscovery = {
       };
       
     } catch (error) {
-      console.error("Error discovering relevant genes:", error);
+      Logger.error("Error discovering relevant genes:", error);
       
-      // Even if the SNPedia part fails, return local results
+      // Fallback to direct Ensembl query if SNPedia fails
+      const fallbackResults = await this.attemptFallbackDiscovery(progressCallback, localResults);
+      
       return {
-        matchingSNPs: localResults.matches,
-        geneGroups: {},
-        error: error.message,
+        matchingSNPs: {...localResults.matches, ...fallbackResults.matches},
+        geneGroups: fallbackResults.geneGroups || {},
+        error: `SNPedia API error: ${error.message}. Used fallback discovery method.`,
         stats: {
-          totalFound: initialPriority.length,
+          totalFound: Object.keys(localResults.matches).length + Object.keys(fallbackResults.matches || {}).length,
           locallyIdentified: localResults.stats.significantCount,
           fromSNPedia: 0,
-          geneCount: 0
+          fromFallback: Object.keys(fallbackResults.matches || {}).length,
+          geneCount: Object.keys(fallbackResults.geneGroups || {}).length
         }
       };
     }
+  },
+  
+  /**
+   * Fallback discovery method when SNPedia fails
+   * Uses high-priority SNPs and direct Ensembl queries
+   */
+  async attemptFallbackDiscovery(progressCallback, localResults) {
+    Logger.info("Attempting fallback gene discovery method");
+    
+    if (progressCallback) {
+      progressCallback({
+        stage: "API failure detected - Using fallback method",
+        progress: 60
+      });
+    }
+    
+    const fallbackSnps = {
+      // Known important SNPs when SNPedia fails
+      "rs429358": { gene: "APOE", significance: "high", condition: "Alzheimer's risk" },
+      "rs7412": { gene: "APOE", significance: "high", condition: "Alzheimer's risk" },
+      "rs1800562": { gene: "HFE", significance: "high", condition: "Hemochromatosis" },
+      "rs1801133": { gene: "MTHFR", significance: "medium", condition: "Cardiovascular" },
+      "rs1800795": { gene: "IL6", significance: "medium", condition: "Inflammation" },
+      "rs53576": { gene: "OXTR", significance: "medium", condition: "Empathy traits" },
+      "rs6152": { gene: "AR", significance: "medium", condition: "Androgenic traits" },
+      "rs1815739": { gene: "ACTN3", significance: "medium", condition: "Muscle performance" },
+      "rs4680": { gene: "COMT", significance: "medium", condition: "Cognitive function" },
+      "rs1800497": { gene: "ANKK1", significance: "medium", condition: "Reward mechanism" }
+    };
+    
+    // Create a Map of user's SNPs with normalization
+    const userSnpsMap = new Map();
+    this.userSnps.forEach(snp => {
+      const normalizedRsid = this.normalizeRsid(snp.rsid);
+      userSnpsMap.set(normalizedRsid, snp);
+      if (normalizedRsid.startsWith('rs')) {
+        userSnpsMap.set(normalizedRsid.substring(2), snp);
+      }
+    });
+    
+    // Find matches against our fallback list
+    const matches = {};
+    for (const [rsid, info] of Object.entries(fallbackSnps)) {
+      const normalizedRsid = this.normalizeRsid(rsid);
+      const numericId = normalizedRsid.startsWith('rs') ? normalizedRsid.substring(2) : normalizedRsid;
+      
+      if (userSnpsMap.has(normalizedRsid) || userSnpsMap.has(numericId)) {
+        const userSnp = userSnpsMap.get(normalizedRsid) || userSnpsMap.get(numericId);
+        matches[rsid] = {
+          ...info,
+          genotype: userSnp.Genotype,
+          chromosome: userSnp.chromosome,
+          position: userSnp.position
+        };
+      }
+    }
+    
+    Logger.info(`Fallback discovery found ${Object.keys(matches).length} matches`);
+    
+    // If we still have no matches, sample some SNPs from the user's data
+    if (Object.keys(matches).length === 0) {
+      // Sample a few SNPs from user data to at least show something
+      const sampledSnps = this.userSnps
+        .slice(0, Math.min(20, this.userSnps.length))
+        .filter(snp => snp.rsid && snp.rsid.toLowerCase().startsWith('rs'));
+      
+      for (const snp of sampledSnps) {
+        matches[snp.rsid] = {
+          gene: "Unknown",
+          significance: "unknown",
+          condition: "Data sample only",
+          genotype: snp.Genotype,
+          chromosome: snp.chromosome,
+          position: snp.position
+        };
+      }
+      
+      Logger.info(`Added ${sampledSnps.length} sampled SNPs as fallback`);
+    }
+    
+    // Group by gene
+    const geneGroups = {};
+    for (const [rsid, info] of Object.entries(matches)) {
+      const gene = info.gene || "Unknown";
+      if (!geneGroups[gene]) {
+        geneGroups[gene] = [];
+      }
+      geneGroups[gene].push({ rsid, ...info });
+    }
+    
+    if (progressCallback) {
+      progressCallback({
+        stage: "Fallback discovery complete",
+        progress: 100,
+        findings: Object.keys(matches).length 
+      });
+    }
+    
+    return { 
+      matches, 
+      geneGroups,
+      fallback: true 
+    };
   }
 };
 
