@@ -548,15 +548,38 @@ const SNPediaManager = {
         
         // Extract SNPs from this batch
         if (data.query && data.query.categorymembers) {
-          // Filter to keep only rsIDs
+          // Filter to keep only rsIDs and normalize them
           const snps = data.query.categorymembers
-            .filter(item => item.title.match(/^rs\d+$/i))
-            .map(item => ({
-              rsid: item.title,
-              category: category.replace('Category:', ''),
-              magnitude: parseInt(category.split('_')[1]) || 0,
-              pageid: item.pageid  // Store the page ID for potential future uses
-            }));
+            .filter(item => {
+              const title = (item.title || "").trim();
+              
+              // Keep only items that look like rsIDs (either as rs123 or just 123)
+              return (
+                title.match(/^rs\d+$/i) || // Standard format: rs123
+                title.match(/^\d+$/) // Just the number: 123
+              );
+            })
+            .map(item => {
+              // Clean and normalize the rsID
+              let rsid = (item.title || "").trim();
+              
+              // Ensure consistent format - always include rs prefix
+              if (!rsid.toLowerCase().startsWith("rs") && rsid.match(/^\d+$/)) {
+                rsid = "rs" + rsid;
+              }
+              
+              return {
+                rsid: rsid,
+                category: category.replace('Category:', ''),
+                magnitude: parseInt(category.split('_')[1]) || 0,
+                pageid: item.pageid  // Store the page ID for potential future uses
+              };
+            });
+          
+          // Log sample SNPs from this batch to help with debugging
+          if (snps.length > 0) {
+            Logger.debug(`Sample SNPs from ${category}:`, snps.slice(0, 3));
+          }
           
           allSNPs = [...allSNPs, ...snps];
           
@@ -576,9 +599,11 @@ const SNPediaManager = {
             this.queueRequest(nextParams, processResults);
           } else {
             // Done
+            Logger.info(`Found ${allSNPs.length} SNPs in category ${category}`);
             resolve(allSNPs);
           }
         } else {
+          Logger.warn(`No categorymembers found in category ${category}`);
           resolve(allSNPs);
         }
       };

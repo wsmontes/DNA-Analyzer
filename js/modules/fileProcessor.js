@@ -93,6 +93,8 @@ const FileProcessor = {
         }
       });
       
+      Logger.info(`Retrieved ${significantSnps.length} significant SNPs from SNPedia`);
+      
       if (progressCallback) {
         progressCallback({
           stage: `Found ${significantSnps.length} significant SNPs in database`,
@@ -111,19 +113,53 @@ const FileProcessor = {
       }
       
       // Create a map of the user's SNPs for efficient lookup
-      const userSnpMap = new Map(allResults.map(snp => [snp.rsid, snp]));
+      // Normalize rsIDs to ensure consistent matching
+      const userSnpMap = new Map();
+      for (const snp of allResults) {
+        // Normalize to lowercase and ensure 'rs' prefix is present
+        let rsid = snp.rsid.toLowerCase();
+        if (!rsid.startsWith('rs') && /^\d+$/.test(rsid)) {
+          rsid = 'rs' + rsid;
+        }
+        userSnpMap.set(rsid, { ...snp, rsid });
+        
+        // Also add the non-prefixed version for flexible matching
+        if (rsid.startsWith('rs')) {
+          const numericRs = rsid.substring(2);
+          if (!userSnpMap.has(numericRs)) {
+            userSnpMap.set(numericRs, { ...snp, rsid });
+          }
+        }
+      }
+      
+      Logger.info(`Created map of ${userSnpMap.size} user SNPs for matching`);
+      
       const matchingSignificantSnps = [];
       let checkedCount = 0;
       
+      // Log a sample of SNPs to help with debugging
+      Logger.debug("First 5 user SNPs:", [...userSnpMap.entries()].slice(0, 5));
+      Logger.debug("First 5 significant SNPs to match:", significantSnps.slice(0, 5));
+      
       // Find matching significant SNPs in user's data
       for (const snp of significantSnps) {
-        if (userSnpMap.has(snp.rsid)) {
+        let normalizedRsid = snp.rsid.toLowerCase();
+        let numericRsid = normalizedRsid.startsWith('rs') ? normalizedRsid.substring(2) : normalizedRsid;
+        
+        // Try both formats for matching
+        if (userSnpMap.has(normalizedRsid) || userSnpMap.has(numericRsid)) {
+          const userSnp = userSnpMap.get(normalizedRsid) || userSnpMap.get(numericRsid);
           matchingSignificantSnps.push({
             ...snp,
-            userGenotype: userSnpMap.get(snp.rsid).Genotype,
-            chromosome: userSnpMap.get(snp.rsid).chromosome,
-            position: userSnpMap.get(snp.rsid).position
+            userGenotype: userSnp.Genotype,
+            chromosome: userSnp.chromosome,
+            position: userSnp.position
           });
+          
+          // Log successful matches (first few only)
+          if (matchingSignificantSnps.length <= 5) {
+            Logger.info(`Matched SNP ${snp.rsid} with user SNP ${userSnp.rsid}, genotype: ${userSnp.Genotype}`);
+          }
         }
         
         // Update progress periodically
@@ -137,6 +173,8 @@ const FileProcessor = {
           });
         }
       }
+      
+      Logger.info(`Found ${matchingSignificantSnps.length} matching SNPs out of ${significantSnps.length} significant SNPs`);
 
       if (progressCallback) {
         progressCallback({
@@ -147,10 +185,25 @@ const FileProcessor = {
       }
       
       // STEP 3: Get detailed information for the matched SNPs (from Ensembl)
-      const topSnps = matchingSignificantSnps
+      let topSnps = matchingSignificantSnps
         .sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0))
-        .slice(0, 25); // Get top 25 by magnitude
-    
+        .slice(0, Math.min(25, matchingSignificantSnps.length)); // Get top 25 by magnitude
+      
+      // If no matches, use the first few SNPs from user data as fallback
+      if (topSnps.length === 0) {
+        Logger.warn("No matching significant SNPs found. Using fallback with first 10 user SNPs");
+        topSnps = allResults.slice(0, 10).map(snp => ({
+          rsid: snp.rsid,
+          chromosome: snp.chromosome,
+          position: snp.position,
+          userGenotype: snp.Genotype,
+          magnitude: 0
+        }));
+        
+        // Add a fallback insight
+        topInsights.push(`<span class="info-note">No significant SNPs were found in your DNA that match our high-impact database. This could be normal or indicate data format differences.</span>`);
+      }
+      
       if (progressCallback) {
         progressCallback({
           stage: "Getting detailed information for significant SNPs",
@@ -235,6 +288,9 @@ const FileProcessor = {
         topInsights.push(`${ancestryHints} SNPs relacionados à ancestralidade/etnia encontrados`);
       }
 
+      // Always include a summary insight with counts
+      topInsights.push(`<span class="insight-highlight">Found ${allResults.length} SNPs in your DNA file. Analyzed in detail: ${topSnps.length} SNPs.</span>`);
+
       return {
         allResults,
         clinSummary,
@@ -245,12 +301,16 @@ const FileProcessor = {
         topInsights,
         significantMatches: {
           count: matchingSignificantSnps.length,
-          items: matchingSignificantSnps
+          items: matchingSignificantSnps.length > 0 ? matchingSignificantSnps : topSnps // Always return something
         }
       };
     } catch (error) {
-      console.error("Error in comprehensive analysis:", error);
+      Logger.error("Error in comprehensive analysis:", error);
       topInsights.push(`<span class="error-message">Erro durante análise completa: ${error.message}</span>`);
+      
+      // Add helpful fallback insights even when we encounter an error
+      topInsights.push(`<span class="insight-highlight">Found ${allResults.length} SNPs in your DNA file.</span>`);
+      topInsights.push(`<span class="info-note">Try reloading the page or using a different DNA file if you continue to see errors.</span>`);
       
       return {
         allResults,

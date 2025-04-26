@@ -331,11 +331,14 @@ const UIManager = {
       clinSummary, 
       traitSummary, 
       topInsights,
-      significantMatches 
+      significantMatches,
+      error 
     } = data;
     
     // Create dashboard summary
     if (this.elements.dashboardEl) {
+      let matchCount = significantMatches?.count || 0;
+      
       this.elements.dashboardEl.innerHTML = `
         <div class="dashboard-card">
           <div class="number">${allResults.length.toLocaleString()}</div>
@@ -349,55 +352,60 @@ const UIManager = {
           <div class="number">${Object.keys(traitCounts).length}</div>
           <div class="label">Traços/Fenótipos</div>
         </div>
-        <div class="dashboard-card ${significantMatches?.count > 0 ? 'highlight' : ''}">
-          <div class="number">${significantMatches?.count || 0}</div>
+        <div class="dashboard-card ${matchCount > 0 ? 'highlight' : ''}">
+          <div class="number">${matchCount}</div>
           <div class="label">SNPs Significativos</div>
         </div>
       `;
     }
     
-    // Update sidebar summary
-    if (this.elements.sidebarSummary) {
-      this.elements.sidebarSummary.innerHTML = `
-        <h3>Resumo da Análise</h3>
-        <div class="summary-stats">
-          <p><strong>${allResults.length.toLocaleString()}</strong> SNPs analisados</p>
-          <p><strong>${significantMatches?.count || 0}</strong> SNPs significativos encontrados</p>
-          <p><strong>${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</strong> potencialmente patogênicos</p>
-        </div>
-      `;
-    }
-
-    // Create insights
+    // Update insights
     if (this.elements.insightsEl) {
-      this.elements.insightsEl.innerHTML = `
+      let insightsHtml = '';
+      
+      // Always show insights, even if empty
+      insightsHtml += `
         <div class="insights-container">
           ${topInsights.length ? 
             topInsights.map(i => `<div class="insight-item">${i}</div>`).join('') : 
-            '<div class="insight-item">Nenhuma descoberta importante encontrada em seu DNA.</div>'}
-          
-          ${significantMatches && significantMatches.count > 0 ? `
-            <div class="significant-snps">
-              <h3>SNPs Significativos (Top ${Math.min(10, significantMatches.count)})</h3>
-              <div class="significant-grid">
-                ${significantMatches.items
-                  .sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0))
-                  .slice(0, 10)
-                  .map(snp => `
-                    <div class="significant-card">
-                      <div class="significant-rsid">
-                        <span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span>
-                      </div>
-                      <div class="magnitude-badge">
-                        Magnitude: ${snp.magnitude || 'N/A'}
-                      </div>
-                      <div class="category-tag">${snp.category || 'Não categorizado'}</div>
-                    </div>
-                  `).join('')}
-              </div>
-            </div>` : ''}
-        </div>
+            '<div class="insight-item info-note">No significant insights were found. This could be due to data format differences or limitations in our reference database.</div>'}
       `;
+      
+      // Show error message if present
+      if (error) {
+        insightsHtml += `<div class="insight-item error-message">Error: ${error}</div>`;
+      }
+      
+      // Show SNPs if available
+      if (significantMatches && significantMatches.items && significantMatches.items.length > 0) {
+        const items = Array.isArray(significantMatches.items) ? significantMatches.items : [];
+        const displayCount = Math.min(10, items.length);
+        
+        insightsHtml += `
+          <div class="significant-snps">
+            <h3>SNPs (Top ${displayCount})</h3>
+            <div class="significant-grid">
+              ${items
+                .sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0))
+                .slice(0, displayCount)
+                .map(snp => `
+                  <div class="significant-card">
+                    <div class="significant-rsid">
+                      <span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span>
+                    </div>
+                    <div class="magnitude-badge">
+                      Magnitude: ${snp.magnitude || 'N/A'}
+                    </div>
+                    <div class="category-tag">${snp.category || snp.chromosome || 'Não categorizado'}</div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+        `;
+      }
+      
+      insightsHtml += '</div>'; // Close insights-container
+      this.elements.insightsEl.innerHTML = insightsHtml;
     }
 
     // Create traits panel
