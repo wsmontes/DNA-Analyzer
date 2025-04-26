@@ -1,7 +1,7 @@
 /**
  * DataManager
  * 
- * Updated to prioritize genes and implement bulk querying with API logging
+ * Core module for managing and processing DNA data
  */
 import ProxyManager from './proxyManager.js';
 import SNPediaManager from './snpediaManager.js';
@@ -9,7 +9,7 @@ import GenePrioritizer from './genePrioritizer.js';
 import GeneDiscovery from './geneDiscovery.js';
 import Logger from './logger.js';
 
-// Update the DataManager object
+// DataManager object
 const DataManager = {
   snpCache: new Map(),
   allResults: [],
@@ -17,14 +17,14 @@ const DataManager = {
   currentPage: 1,
   rowsPerPage: 20,
   
-  // Inicializar
+  // Initialize DataManager
   init() {
     // Initialize SNPedia Manager
     SNPediaManager.init();
     Logger.info('[DataManager] Initialized');
   },
   
-  // Obter dados de SNP em cache, se disponível
+  // Get cached SNP data if available
   getCachedSnp(rsid) {
     const cached = this.snpCache.get(rsid);
     if (cached) {
@@ -33,15 +33,15 @@ const DataManager = {
     return cached;
   },
 
-  // Definir SNP em cache
+  // Cache SNP data
   cacheSnp(rsid, data) {
     Logger.debug(`[DataManager] Caching SNP ${rsid}`);
     this.snpCache.set(rsid, data);
   },
 
-  // Buscar detalhes de SNP apenas quando necessário
+  // Fetch SNP details from Ensembl API
   async fetchSnp(rsid) {
-    // Verificar primeiro o cache
+    // Check cache first
     const cached = this.getCachedSnp(rsid);
     if (cached) {
       return cached;
@@ -50,7 +50,6 @@ const DataManager = {
     const url = `https://rest.ensembl.org/variation/human/${rsid}?content-type=application/json`;
     try {
       Logger.info(`[DataManager] Fetching SNP ${rsid} from Ensembl`);
-      // Usar o ProxyManager.fetch atualizado
       const res = await ProxyManager.fetch(url, {
         headers: { 'Accept': 'application/json' }
       });
@@ -64,7 +63,20 @@ const DataManager = {
     }
   },
 
-  // Buscar frequências populacionais para um SNP
+  // Extract traits from SNP data
+  extractTraits(snpData) {
+    if (!snpData || !snpData.phenotypes) return [];
+    
+    const traits = new Set();
+    for (const pheno of snpData.phenotypes) {
+      if (pheno.trait) {
+        traits.add(pheno.trait.toLowerCase());
+      }
+    }
+    return Array.from(traits);
+  },
+
+  // Fetch population frequencies 
   async fetchPopulationFrequencies(rsid) {
     const url = `https://rest.ensembl.org/variation/human/${rsid}?pops=1;content-type=application/json`;
     try {

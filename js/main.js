@@ -4,65 +4,18 @@
  * Enhanced with API diagnostics and robust gene discovery
  */
 
-import ProxyManager from './modules/proxyManager.js';
 import DataManager from './modules/dataManager.js';
-import UIManager from './modules/uiManager.js';
 import FileProcessor from './modules/fileProcessor.js';
-import ChartManager from './modules/chartManager.js';
-import SNPediaManager from './modules/snpediaManager.js';
-import GeneDiscovery from './modules/geneDiscovery.js';
+import UIManager from './modules/uiManager.js';
+import ProxyManager from './modules/proxyManager.js';
 import APIDiagnostics from './modules/apiDiagnostics.js';
 import Logger from './modules/logger.js';
 
-// Expose modules for easier debugging in console
-window.proxyManager = ProxyManager;
-window.logger = Logger;
-window.dataManager = DataManager;
-window.apiDiagnostics = APIDiagnostics;
-
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  Logger.info('Initializing DNA Explorer...');
-
-  // Initialize managers
-  UIManager.init();
-  ChartManager.init();
-  DataManager.init();
-  SNPediaManager.init();
+  // Get file input element
+  const fileInput = document.getElementById('dna-file');
   
-  // Initialize API diagnostics
-  APIDiagnostics.init({
-    snpedia: document.getElementById('snpedia-status'),
-    ensembl: document.getElementById('ensembl-status'),
-    geneDb: document.getElementById('gene-db-status')
-  });
-
-  // Initialize the ProxyManager in the background
-  ProxyManager.initialize();
-  
-  // Test API connections
-  APIDiagnostics.checkAllConnections()
-    .then(results => {
-      Logger.info('API connection check results:', results);
-      // If SNPedia is down, show a warning
-      if (!results.snpedia?.ok) {
-        Logger.warn('SNPedia connection failed. Gene discovery may be limited.');
-        APIDiagnostics.logToDebugPanel('SNPedia connection failed. Gene discovery may be limited.', 'warning');
-      }
-    })
-    .catch(err => {
-      Logger.error('Error checking API connections:', err);
-    });
-
-  // Add SNPedia attribution to the footer
-  addSNPediaAttribution();
-  
-  // Create log viewer button in footer
-  addLogViewerButton();
-  
-  // Set up event listener for file upload with automated workflow
-  const fileInput = document.getElementById('fileInput');
-  
+  // Set up file input handler
   fileInput.addEventListener('change', async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -90,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
       // Process data locally
+      // Ensure DataManager is initialized
+      DataManager.init();
       const localResults = await DataManager.performLocalAnalysis(dnaData);
       
       // Update UI with local results
