@@ -835,3 +835,28 @@ select {
 .error-message {
   color: var(--danger);
 }
+
+/* Action buttons in footer */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* API logging styles */
+.api-log-entry {
+  padding: 8px;
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  background: rgba(67, 97, 238, 0.05);
+  border-left: 3px solid var(--primary);
+}
+
+.api-log-entry.error {
+  background: rgba(230, 57, 70, 0.05);
+  border-left: 3px solid var(--danger);
+}
+
+.api-log-entry.cache {
+  background: rgba(12, 206, 107, 0.05);
+  border-left: 3px solid var(--success);
+}

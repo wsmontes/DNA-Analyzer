@@ -5,6 +5,7 @@
  * Following guidelines from https://www.snpedia.com/index.php/Bulk
  * With continuation support from MediaWiki API
  */
+import Logger from './logger.js';
 
 const SNPediaManager = {
   baseUrl: 'https://bots.snpedia.com/api.php',
@@ -17,7 +18,7 @@ const SNPediaManager = {
    * Initialize the SNPedia manager
    */
   init() {
-    console.log('SNPedia Manager initialized');
+    Logger.info('[SNPediaManager] Initialized');
     // Start the request queue processor
     this.processQueue();
   },
@@ -34,8 +35,11 @@ const SNPediaManager = {
     if (this.cache.has(cacheKey)) {
       const cachedData = this.cache.get(cacheKey);
       if (cachedData.expires > Date.now()) {
-        console.log('Using cached SNPedia data');
-        setTimeout(() => callback(null, cachedData.data), 0);
+        Logger.debug('[SNPediaManager] Using cached data');
+        setTimeout(() => {
+          Logger.logApiResponse('SNPedia CACHE', cachedData.data, 'cache');
+          callback(null, cachedData.data);
+        }, 0);
         return;
       } else {
         this.cache.delete(cacheKey);
@@ -71,7 +75,7 @@ const SNPediaManager = {
       origin: '*'
     }).toString();
     
-    console.log(`Making SNPedia API request: ${url}`);
+    Logger.info(`[SNPediaManager] Making API request: ${url}`);
     
     fetch(url)
       .then(response => {
@@ -79,6 +83,9 @@ const SNPediaManager = {
         return response.json();
       })
       .then(data => {
+        // Log the API response
+        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, data);
+        
         // Cache the result (24 hour expiry)
         this.cache.set(cacheKey, {
           data,
@@ -88,7 +95,8 @@ const SNPediaManager = {
         callback(null, data);
       })
       .catch(error => {
-        console.error('SNPedia API error:', error);
+        Logger.error('[SNPediaManager] API error:', error);
+        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, { error: error.message }, 'error');
         callback(error, null);
       })
       .finally(() => {

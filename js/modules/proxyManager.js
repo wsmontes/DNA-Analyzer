@@ -4,6 +4,8 @@
  * Gerencia proxies para contornar limitações de CORS, testando vários
  * e escolhendo o primeiro que funciona.
  */
+import Logger from './logger.js';
+
 const ProxyManager = {
   proxies: [
     { url: '',                                    name: 'Direct' },
@@ -23,13 +25,10 @@ const ProxyManager = {
 
   // Log com distinção visual
   log(message, type = 'info') {
-    const styles = {
-      info: 'color: #2196F3; font-weight: bold;',
-      success: 'color: #4CAF50; font-weight: bold;',
-      error: 'color: #F44336; font-weight: bold;',
-      warning: 'color: #FF9800; font-weight: bold;'
-    };
-    console.log(`%c[ProxyManager] ${message}`, styles[type] || styles.info);
+    if (type === 'info') Logger.info(`[ProxyManager] ${message}`);
+    else if (type === 'success') Logger.info(`[ProxyManager] ${message}`);
+    else if (type === 'error') Logger.error(`[ProxyManager] ${message}`);
+    else if (type === 'warning') Logger.warn(`[ProxyManager] ${message}`);
   },
 
   // Inicializa: Testa proxies e encontra o primeiro que funciona
@@ -54,6 +53,10 @@ const ProxyManager = {
         });
 
         if (response.ok) {
+          const data = await response.json();
+          // Log the test response
+          Logger.logApiResponse(`${proxy.name} Test`, data);
+          
           this.log(`Sucesso! Usando proxy: ${proxy.name}`, 'success');
           this.currentProxy = proxy;
           this.isInitialized = true;
@@ -119,12 +122,15 @@ const ProxyManager = {
       const cached = this.getFromCache(url);
       if (cached && cached.expires > Date.now()) {
         this.log(`Dados recuperados do cache para: ${url.slice(0,50)}...`, 'success');
+        // Log cache hit as an API response too
+        Logger.logApiResponse(`CACHE:${url}`, cached.data, 'cache');
         return new Response(new Blob([JSON.stringify(cached.data)], {type: 'application/json'}));
       }
     }
 
     const proxy = this.currentProxy;
     const fullUrl = proxy.url ? `${proxy.url}${encodeURIComponent(url)}` : url;
+    const apiName = proxy.url ? `${proxy.name}:${url}` : url;
 
     try {
       this.log(`Buscando via ${proxy.name}: ${url.slice(0,50)}...`);
@@ -132,13 +138,26 @@ const ProxyManager = {
         ...options,
         signal: AbortSignal.timeout(8000)
       });
-      if (!response.ok) throw new Error(`Status ${response.status}`);
-      const data = await response.clone().json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        Logger.logApiResponse(apiName, { status: response.status, statusText: response.statusText, body: errorText }, 'error');
+        throw new Error(`Status ${response.status}`);
+      }
+      
+      // Clone the response for logging and cache
+      const clonedResponse = response.clone();
+      const data = await clonedResponse.json();
+      
+      // Log the successful response
+      Logger.logApiResponse(apiName, data);
+      
       this.saveToCache(url, data);
       this.log(`Sucesso com ${proxy.name}`, 'success');
       return response;
     } catch (err) {
       this.log(`${proxy.name} falhou: ${err.message}`, 'error');
+      Logger.logApiResponse(apiName, { error: err.message }, 'error');
+      
       // Na primeira falha, esqueça este proxy, reinicialize e tente novamente uma vez
       if (!_retried) {
         this.isInitialized = false;

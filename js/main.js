@@ -1,7 +1,7 @@
 /**
  * DNA Explorer - Main Application
  * 
- * Automated workflow with comprehensive analysis
+ * Automated workflow with comprehensive analysis and API logging
  */
 
 import ProxyManager from './modules/proxyManager.js';
@@ -11,13 +11,16 @@ import FileProcessor from './modules/fileProcessor.js';
 import ChartManager from './modules/chartManager.js';
 import SNPediaManager from './modules/snpediaManager.js';
 import GeneDiscovery from './modules/geneDiscovery.js';
+import Logger from './modules/logger.js';
 
-// Expose ProxyManager for easier debugging in console
+// Expose modules for easier debugging in console
 window.proxyManager = ProxyManager;
+window.logger = Logger;
+window.dataManager = DataManager;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('Initializing DNA Explorer...');
+  Logger.info('Initializing DNA Explorer...');
 
   // Initialize managers
   UIManager.init();
@@ -30,6 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add SNPedia attribution to the footer
   addSNPediaAttribution();
+  
+  // Create log viewer button in footer
+  addLogViewerButton();
   
   // Set up event listener for file upload with automated workflow
   const fileInput = document.getElementById('fileInput');
@@ -154,4 +160,22 @@ function addSNPediaAttribution() {
     </div>
   `;
   document.body.appendChild(footer);
+}
+
+// Function to add log viewer button to footer
+function addLogViewerButton() {
+  const footer = document.querySelector('#status-footer .action-buttons');
+  if (!footer) return;
+  
+  const logButton = document.createElement('button');
+  logButton.className = 'btn btn-sm btn-outline';
+  logButton.innerText = 'View API Logs';
+  logButton.addEventListener('click', () => {
+    console.groupCollapsed('DNA Explorer API Logs');
+    console.log('API Response Logs:', Logger.getApiLogs());
+    console.log('To view more details, access window.logger.getApiLogs()');
+    console.groupEnd();
+  });
+  
+  footer.appendChild(logButton);
 }

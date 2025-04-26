@@ -1,12 +1,13 @@
 /**
  * DataManager
  * 
- * Updated to prioritize genes and implement bulk querying
+ * Updated to prioritize genes and implement bulk querying with API logging
  */
 import ProxyManager from './proxyManager.js';
 import SNPediaManager from './snpediaManager.js';
 import GenePrioritizer from './genePrioritizer.js';
 import GeneDiscovery from './geneDiscovery.js';
+import Logger from './logger.js';
 
 // Update the DataManager object
 const DataManager = {
@@ -20,15 +21,21 @@ const DataManager = {
   init() {
     // Initialize SNPedia Manager
     SNPediaManager.init();
+    Logger.info('[DataManager] Initialized');
   },
   
   // Obter dados de SNP em cache, se disponível
   getCachedSnp(rsid) {
-    return this.snpCache.get(rsid);
+    const cached = this.snpCache.get(rsid);
+    if (cached) {
+      Logger.debug(`[DataManager] Cache hit for SNP ${rsid}`);
+    }
+    return cached;
   },
 
   // Definir SNP em cache
   cacheSnp(rsid, data) {
+    Logger.debug(`[DataManager] Caching SNP ${rsid}`);
     this.snpCache.set(rsid, data);
   },
 
@@ -42,6 +49,7 @@ const DataManager = {
 
     const url = `https://rest.ensembl.org/variation/human/${rsid}?content-type=application/json`;
     try {
+      Logger.info(`[DataManager] Fetching SNP ${rsid} from Ensembl`);
       // Usar o ProxyManager.fetch atualizado
       const res = await ProxyManager.fetch(url, {
         headers: { 'Accept': 'application/json' }
@@ -51,7 +59,7 @@ const DataManager = {
       this.cacheSnp(rsid, data);
       return data;
     } catch (err) {
-      console.error(`Erro ao buscar ${rsid}:`, err);
+      Logger.error(`[DataManager] Error fetching SNP ${rsid}:`, err);
       throw err;
     }
   },
@@ -60,13 +68,14 @@ const DataManager = {
   async fetchPopulationFrequencies(rsid) {
     const url = `https://rest.ensembl.org/variation/human/${rsid}?pops=1;content-type=application/json`;
     try {
+      Logger.info(`[DataManager] Fetching population frequencies for ${rsid}`);
       const res = await ProxyManager.fetch(url, {
         headers: { 'Accept': 'application/json' }
       });
       const data = await res.json();
       return data.populations || [];
     } catch (err) {
-      console.error(`Erro ao buscar frequências populacionais para ${rsid}:`, err);
+      Logger.error(`[DataManager] Error fetching population frequencies for ${rsid}:`, err);
       throw err;
     }
   },
@@ -96,6 +105,7 @@ const DataManager = {
       return rsidMatch && chromMatch;
     });
     
+    Logger.debug(`[DataManager] Filtered results: ${this.filteredResults.length} / ${this.allResults.length} SNPs`);
     this.currentPage = 1;
     return this.filteredResults;
   },
@@ -103,6 +113,7 @@ const DataManager = {
   // Buscar informações do SNPedia via API do SNPedia (não Wikipedia)
   async fetchSnpediaSummary(rsid) {
     try {
+      Logger.info(`[DataManager] Fetching SNPedia summary for ${rsid}`);
       // Use SNPediaManager instead of Wikipedia API
       const snpData = await SNPediaManager.getSNP(rsid);
       
@@ -124,7 +135,7 @@ const DataManager = {
         return 'Nenhum artigo do SNPedia encontrado ou resumo disponível.';
       }
     } catch (err) {
-      console.error(`Erro ao buscar resumo do SNPedia para ${rsid}:`, err);
+      Logger.error(`[DataManager] Error fetching SNPedia summary for ${rsid}:`, err);
       return 'Falha ao buscar informações do SNPedia.';
     }
   },
@@ -145,7 +156,7 @@ const DataManager = {
         progressCallback
       });
     } catch (err) {
-      console.error("Error in batch SNPedia fetch:", err);
+      Logger.error("Error in batch SNPedia fetch:", err);
       return {};
     }
   },
@@ -163,7 +174,7 @@ const DataManager = {
         progressCallback
       });
     } catch (err) {
-      console.error("Error fetching all SNPedia SNPs:", err);
+      Logger.error("Error fetching all SNPedia SNPs:", err);
       return [];
     }
   },
@@ -194,7 +205,7 @@ const DataManager = {
       return await this.fetchSnpediaBatch(relevantSNPs, progressCallback);
       
     } catch (err) {
-      console.error("Error getting relevant SNPedia data:", err);
+      Logger.error("Error getting relevant SNPedia data:", err);
       return {};
     }
   },
@@ -258,7 +269,7 @@ const DataManager = {
       };
       
     } catch (err) {
-      console.error("Error prioritizing gene SNPs:", err);
+      Logger.error("Error prioritizing gene SNPs:", err);
       return {
         prioritizedSNPs: [],
         categorizedSNPs: {},
@@ -286,7 +297,7 @@ const DataManager = {
       
       return discoveryResults;
     } catch (error) {
-      console.error("Error discovering relevant genes:", error);
+      Logger.error("Error discovering relevant genes:", error);
       throw error;
     }
   },
@@ -325,7 +336,7 @@ const DataManager = {
             const info = await this.fetchSnp(rsid);
             return { rsid, info };
           } catch (error) {
-            console.warn(`Error fetching details for ${rsid}:`, error);
+            Logger.warn(`Error fetching details for ${rsid}:`, error);
             return { rsid, error: error.message };
           }
         }));
@@ -349,7 +360,7 @@ const DataManager = {
       
       return detailedData;
     } catch (error) {
-      console.error("Error fetching detailed gene data:", error);
+      Logger.error("Error fetching detailed gene data:", error);
       throw error;
     }
   }
