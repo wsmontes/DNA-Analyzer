@@ -436,68 +436,147 @@ const SNPediaManager = {
   },
   
   /**
-   * Process a batch of SNP pages and filter by criteria
-   * @param {Array} pages - Pages returned from the API
-   * @param {Object} criteria - Filter criteria (genes, categories)
-   * @returns {Array} Matching SNP data
+   * Get all SNPs with high magnitude (clinically significant)
+   * @param {Object} options - Options including progressCallback
+   * @returns {Promise<Array>} Array of high magnitude SNPs
    */
-  processSnpBatch(pages, criteria) {
-    const { genes = [], categories = [] } = criteria;
-    const results = [];
+  async getHighMagnitudeSNPs(options = {}) {
+    const { progressCallback } = options;
     
-    for (const page of pages) {
-      // Skip missing pages
-      if (page.missing) continue;
+    // Initial query to get magnitude data
+    try {
+      let highMagnitudeSNPs = [];
+      let currentProgress = 0;
       
-      // Extract SNP ID
-      const rsid = page.title;
-      
-      // Extract content
-      let content = '';
-      if (page.revisions && page.revisions.length) {
-        const revision = page.revisions[0];
-        if (revision.slots && revision.slots.main) {
-          content = revision.slots.main.content || '';
+      // First query for "Category:Magnitude 10" (most important)
+      const magnitude10 = await this.getSnpsInCategory("Category:Magnitude_10", {
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            currentProgress = progress.progress || 0;
+            progressCallback({
+              progress: currentProgress * 0.25, // 25% of total progress
+              found: progress.found || 0,
+              stage: "Fetching magnitude 10 SNPs"
+            });
+          }
         }
-      }
-      
-      // Extract gene
-      let gene = null;
-      const geneMatch = content.match(/\|\s*gene\s*=\s*([A-Za-z0-9]+)/);
-      if (geneMatch && geneMatch[1]) {
-        gene = geneMatch[1].toUpperCase();
-      }
-      
-      // Extract magnitude
-      let magnitude = null;
-      const magnitudeMatch = content.match(/\|\s*magnitude\s*=\s*([+-\.\d]+)/);
-      if (magnitudeMatch && magnitudeMatch[1]) {
-        magnitude = parseFloat(magnitudeMatch[1]);
-      }
-      
-      // Apply filters
-      let matchesFilter = true;
-      
-      // Filter by genes if specified
-      if (genes.length > 0 && gene) {
-        matchesFilter = genes.some(g => 
-          gene === g || gene.includes(g) || g.includes(gene)
-        );
-      }
-      
-      // If it doesn't match the criteria, skip it
-      if (!matchesFilter) continue;
-      
-      // Extract SNP data and add to results
-      results.push({
-        rsid,
-        gene,
-        magnitude,
-        content: this.extractSummary(content)
       });
+      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude10];
+      
+      // Next Magnitude 9
+      const magnitude9 = await this.getSnpsInCategory("Category:Magnitude_9", {
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            currentProgress = progress.progress || 0;
+            progressCallback({
+              progress: 0.25 + currentProgress * 0.25, // 25%-50% of total progress
+              found: highMagnitudeSNPs.length + (progress.found || 0),
+              stage: "Fetching magnitude 9 SNPs"
+            });
+          }
+        }
+      });
+      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude9];
+      
+      // Next Magnitude 8
+      const magnitude8 = await this.getSnpsInCategory("Category:Magnitude_8", {
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            currentProgress = progress.progress || 0;
+            progressCallback({
+              progress: 0.5 + currentProgress * 0.25, // 50%-75% of total progress
+              found: highMagnitudeSNPs.length + (progress.found || 0),
+              stage: "Fetching magnitude 8 SNPs"
+            });
+          }
+        }
+      });
+      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude8];
+      
+      // Next Magnitude 7
+      const magnitude7 = await this.getSnpsInCategory("Category:Magnitude_7", {
+        progressCallback: (progress) => {
+          if (progressCallback) {
+            currentProgress = progress.progress || 0;
+            progressCallback({
+              progress: 0.75 + currentProgress * 0.25, // 75%-100% of total progress
+              found: highMagnitudeSNPs.length + (progress.found || 0),
+              stage: "Fetching magnitude 7 SNPs"
+            });
+          }
+        }
+      });
+      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude7];
+      
+      return highMagnitudeSNPs;
+    } catch (error) {
+      console.error("Error fetching high magnitude SNPs:", error);
+      throw error;
     }
+  },
+  
+  /**
+   * Get all SNPs in a specific SNPedia category
+   * @param {String} category - Category name (e.g., "Category:Magnitude_10")
+   * @param {Object} options - Options including progressCallback
+   * @returns {Promise<Array>} Array of SNPs in that category
+   */
+  async getSnpsInCategory(category, options = {}) {
+    const { progressCallback } = options;
     
-    return results;
+    return new Promise((resolve, reject) => {
+      let allSNPs = [];
+      let params = {
+        action: 'query',
+        list: 'categorymembers',
+        cmtitle: category,
+        cmlimit: 500, // Maximum allowed in one request
+        formatversion: '2'
+      };
+      
+      // Helper to process results with continuation
+      const processResults = (error, data) => {
+        if (error) return reject(error);
+        
+        // Extract SNPs from this batch
+        if (data.query && data.query.categorymembers) {
+          // Filter out non-SNP entries (keep only rsIDs)
+          const snps = data.query.categorymembers
+            .filter(item => item.title.match(/^rs\d+$/i))
+            .map(item => ({
+              rsid: item.title,
+              category: category.replace('Category:', ''),
+              magnitude: parseInt(category.split('_')[1]) || 0
+            }));
+          
+          allSNPs = [...allSNPs, ...snps];
+          
+          // Report progress if callback provided
+          if (progressCallback) {
+            progressCallback({
+              found: allSNPs.length,
+              progress: data.continue ? 0.5 : 1, // Estimate progress
+              done: !data.continue
+            });
+          }
+          
+          // Check if we need to continue
+          if (data.continue) {
+            // Use continuation parameters for next request
+            const nextParams = { ...params, ...data.continue };
+            this.queueRequest(nextParams, processResults);
+          } else {
+            // We're done
+            resolve(allSNPs);
+          }
+        } else {
+          resolve(allSNPs); // No results found
+        }
+      };
+      
+      // Start the first request
+      this.queueRequest(params, processResults);
+    });
   }
 };
 

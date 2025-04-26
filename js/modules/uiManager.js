@@ -580,6 +580,251 @@ const UIManager = {
     `;
     
     document.body.insertAdjacentHTML('beforeend', errorHtml);
+  },
+
+  /**
+   * Display gene discovery UI and process
+   */
+  async runGeneDiscovery() {
+    // Create or get the gene analysis content area
+    const genesPanel = document.getElementById('genes');
+    genesPanel.innerHTML = `
+      <div class="discovery-progress">
+        <h3>Discovering Relevant Genes</h3>
+        <div class="progress-container">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-text">Initializing...</div>
+        </div>
+      </div>
+    `;
+    
+    // Make sure the genes tab is visible
+    const geneTab = document.querySelector('.tab-btn[data-tab="genes"]');
+    if (geneTab) {
+      geneTab.click();
+    }
+    
+    try {
+      // Run gene discovery with progress updates
+      const discoveryResults = await DataManager.discoverRelevantGenes((progress) => {
+        this.updateGeneDiscoveryProgress(progress);
+      });
+      
+      // Show preliminary results
+      this.showGeneDiscoveryResults(discoveryResults);
+      
+      // Return the results for further processing if needed
+      return discoveryResults;
+    } catch (error) {
+      console.error("Gene discovery failed:", error);
+      genesPanel.innerHTML = `
+        <div class="error-panel">
+          <h3>Gene Discovery Failed</h3>
+          <p>${error.message}</p>
+          <button class="btn btn-primary" onclick="window.runGeneDiscovery()">Try Again</button>
+        </div>
+      `;
+      return null;
+    }
+  },
+  
+  /**
+   * Update the gene discovery progress UI
+   * @param {Object} progress - Progress information
+   */
+  updateGeneDiscoveryProgress(progress) {
+    const progressBar = document.querySelector('.progress-fill');
+    const progressText = document.querySelector('.progress-text');
+    
+    if (!progressBar || !progressText) return;
+    
+    const percent = Math.round(progress.progress * 100) || 0;
+    progressBar.style.width = `${percent}%`;
+    
+    let statusText = progress.stage || 'Processing...';
+    if (progress.findings) {
+      statusText += ` (Found: ${progress.findings})`;
+    }
+    
+    progressText.textContent = statusText;
+  },
+  
+  /**
+   * Display gene discovery results
+   * @param {Object} results - Gene discovery results
+   */
+  showGeneDiscoveryResults(results) {
+    const genesPanel = document.getElementById('genes');
+    
+    // Generate HTML for gene groups
+    let geneGroupsHtml = '';
+    for (const [gene, snps] of Object.entries(results.geneGroups)) {
+      geneGroupsHtml += `
+        <div class="gene-card">
+          <div class="gene-header">
+            <h4>${gene}</h4>
+            <span class="gene-count">${snps.length} SNPs</span>
+          </div>
+          <div class="gene-snps">
+            <ul>
+              ${snps.map(snp => `
+                <li>
+                  <span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span> 
+                  ${snp.condition ? `<span class="condition-tag">${snp.condition}</span>` : ''}
+                  ${snp.significance ? `<span class="significance-tag ${snp.significance}">${snp.significance}</span>` : ''}
+                  ${snp.magnitude ? `<span class="magnitude-tag">${snp.magnitude}</span>` : ''}
+                </li>
+              `).join('')}
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+    
+    // Create summary stats
+    const statsHtml = `
+      <div class="discovery-stats">
+        <div class="stat-item">
+          <div class="stat-value">${results.stats.totalFound}</div>
+          <div class="stat-label">Relevant SNPs</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${results.stats.geneCount}</div>
+          <div class="stat-label">Genes</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${results.stats.locallyIdentified}</div>
+          <div class="stat-label">Clinical Markers</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${results.stats.fromSNPedia}</div>
+          <div class="stat-label">From SNPedia</div>
+        </div>
+      </div>
+    `;
+    
+    // Show results
+    genesPanel.innerHTML = `
+      <div class="discovery-results">
+        <h3>Relevant Genes Discovery Results</h3>
+        ${statsHtml}
+        <div class="gene-groups">
+          ${geneGroupsHtml || '<p>No significant genes discovered in your DNA data.</p>'}
+        </div>
+        <div class="action-buttons" style="margin-top:20px;">
+          <button id="fetchDetailsBtn" class="btn btn-primary">Fetch Detailed Data</button>
+        </div>
+      </div>
+    `;
+    
+    // Add click handler for SNP links
+    genesPanel.querySelectorAll('.snp-link').forEach(link => {
+      link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid));
+    });
+    
+    // Add click handler for "Fetch Detailed Data" button
+    document.getElementById('fetchDetailsBtn')?.addEventListener('click', () => {
+      this.fetchDetailsForDiscoveredGenes(results);
+    });
+  },
+  
+  /**
+   * Fetch detailed information for discovered genes
+   * @param {Object} discoveryResults - Results from gene discovery
+   */
+  async fetchDetailsForDiscoveredGenes(discoveryResults) {
+    const genesPanel = document.getElementById('genes');
+    
+    // Show progress indicator
+    genesPanel.insertAdjacentHTML('afterbegin', `
+      <div class="detail-progress">
+        <h3>Fetching Detailed Information</h3>
+        <div class="progress-container">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-text">Initializing...</div>
+        </div>
+      </div>
+    `);
+    
+    // Get the list of SNPs to fetch details for
+    const rsids = Object.keys(discoveryResults.matchingSNPs);
+    
+    try {
+      // Fetch detailed data with progress updates
+      const detailedData = await DataManager.fetchDetailedGeneData(rsids, (progress) => {
+        const detailProgressBar = document.querySelector('.detail-progress .progress-fill');
+        const detailProgressText = document.querySelector('.detail-progress .progress-text');
+        
+        if (detailProgressBar && detailProgressText) {
+          detailProgressBar.style.width = `${progress.progress}%`;
+          detailProgressText.textContent = progress.stage || 'Processing...';
+        }
+      });
+      
+      // Remove progress indicator
+      document.querySelector('.detail-progress')?.remove();
+      
+      // Update the UI with detailed information
+      this.enhanceGeneDiscoveryWithDetails(discoveryResults, detailedData);
+    } catch (error) {
+      console.error("Error fetching detailed gene data:", error);
+      document.querySelector('.detail-progress')?.remove();
+      
+      // Show error message
+      genesPanel.insertAdjacentHTML('afterbegin', `
+        <div class="error-panel">
+          <h3>Error Fetching Details</h3>
+          <p>${error.message}</p>
+        </div>
+      `);
+    }
+  },
+  
+  /**
+   * Enhance gene discovery results with detailed information
+   * @param {Object} discoveryResults - Results from gene discovery
+   * @param {Object} detailedData - Detailed data from API
+   */
+  enhanceGeneDiscoveryWithDetails(discoveryResults, detailedData) {
+    // Find all SNP items in the UI
+    const snpItems = document.querySelectorAll('.gene-snps li');
+    
+    // Add detailed information to each SNP
+    snpItems.forEach(item => {
+      const rsid = item.querySelector('.snp-link').dataset.rsid;
+      const details = detailedData[rsid];
+      
+      if (!details) return;
+      
+      // Extract relevant information
+      const clinSig = (details.clinical_significance || []).join(', ');
+      const geneSymbol = details.mapped_genes?.length > 0 ? 
+        details.mapped_genes[0].gene_symbol : 'Unknown';
+      const consequence = details.most_severe_consequence || 'Unknown';
+      
+      // Add tooltip with detailed information
+      item.title = `Gene: ${geneSymbol}\nClinical Significance: ${clinSig || 'None'}\nConsequence: ${consequence}`;
+      item.classList.add('has-details');
+      
+      // Add clinical significance indicator if available
+      if (clinSig) {
+        let clinClass = '';
+        if (clinSig.includes('pathogenic')) clinClass = 'clin-pathogenic';
+        else if (clinSig.includes('benign')) clinClass = 'clin-benign';
+        else if (clinSig.includes('uncertain')) clinClass = 'clin-uncertain';
+        
+        if (clinClass) {
+          item.querySelector('.snp-link').classList.add(clinClass);
+        }
+      }
+    });
+    
+    // Add a "detailed" class to the main container
+    document.querySelector('.discovery-results').classList.add('detailed');
   }
 };
 

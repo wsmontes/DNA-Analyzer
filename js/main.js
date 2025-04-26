@@ -208,6 +208,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Call this during initialization after the UI is setup
   addGeneAnalysisButton();
+
+  /**
+   * Add gene discovery feature to the UI
+   */
+  function addGeneDiscoveryFeature() {
+    // Add button to data section
+    const dataSection = document.getElementById('dataSection');
+    if (!dataSection) return;
+    
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'action-buttons';
+    btnContainer.style.marginTop = '20px';
+    btnContainer.style.textAlign = 'center';
+    
+    const geneDiscoveryBtn = document.createElement('button');
+    geneDiscoveryBtn.id = 'geneDiscoveryBtn';
+    geneDiscoveryBtn.className = 'btn btn-primary';
+    geneDiscoveryBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M11.998 8H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5ZM5.071 6h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5Zm-1 5h8.973a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H4.071a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5Z"/>
+        <path d="M9.45 8.475 8.657 9.95l.765.126-.5.19-.593-.09-.405.682-.31-.567-.58.074-.116-.434.546-.082L6.56 9.115l.483-.208 1.37.77L9.25 8.163l.201.312Z"/>
+      </svg>
+      Discover Relevant Genes
+    `;
+    
+    geneDiscoveryBtn.addEventListener('click', async () => {
+      // Disable button while running discovery
+      geneDiscoveryBtn.disabled = true;
+      geneDiscoveryBtn.innerHTML = `
+        <span class="spinner"></span>
+        Analyzing...
+      `;
+      
+      try {
+        // Run gene discovery
+        await UIManager.runGeneDiscovery();
+        
+        // Show gene analysis tab
+        const geneTab = document.querySelector('.tab-btn[data-tab="genes"]');
+        if (geneTab) {
+          geneTab.click();
+        }
+      } catch (error) {
+        console.error("Gene discovery failed:", error);
+        alert(`Gene discovery failed: ${error.message}`);
+      } finally {
+        // Re-enable button
+        geneDiscoveryBtn.disabled = false;
+        geneDiscoveryBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M11.998 8H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5ZM5.071 6h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5Zm-1 5h8.973a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H4.071a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5Z"/>
+            <path d="M9.45 8.475 8.657 9.95l.765.126-.5.19-.593-.09-.405.682-.31-.567-.58.074-.116-.434.546-.082L6.56 9.115l.483-.208 1.37.77L9.25 8.163l.201.312Z"/>
+          </svg>
+          Discover Relevant Genes
+        `;
+      }
+    });
+    
+    btnContainer.appendChild(geneDiscoveryBtn);
+    dataSection.appendChild(btnContainer);
+    
+    // Expose the function globally for button access
+    window.runGeneDiscovery = async () => {
+      await UIManager.runGeneDiscovery();
+    };
+  }
+
+  // Add gene discovery feature after initializing other components
+  addGeneDiscoveryFeature();
 });
 
 // Função para adicionar atribuição do SNPedia

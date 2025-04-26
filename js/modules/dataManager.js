@@ -6,7 +6,9 @@
 import ProxyManager from './proxyManager.js';
 import SNPediaManager from './snpediaManager.js';
 import GenePrioritizer from './genePrioritizer.js';
+import GeneDiscovery from './geneDiscovery.js';
 
+// Update the DataManager object
 const DataManager = {
   snpCache: new Map(),
   allResults: [],
@@ -263,6 +265,92 @@ const DataManager = {
         stats: { total: 0, categories: {} },
         error: err.message
       };
+    }
+  },
+
+  /**
+   * Discover relevant genes from user DNA data
+   * @param {Function} progressCallback - Progress reporting callback
+   * @returns {Promise<Object>} Gene discovery results
+   */
+  async discoverRelevantGenes(progressCallback) {
+    // Initialize the gene discovery module with user data
+    GeneDiscovery.init(this.allResults);
+    
+    try {
+      // Run the discovery process
+      const discoveryResults = await GeneDiscovery.discoverRelevantGenes(progressCallback);
+      
+      // Cache the results
+      this.geneDiscoveryResults = discoveryResults;
+      
+      return discoveryResults;
+    } catch (error) {
+      console.error("Error discovering relevant genes:", error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Get detailed information for discovered genes
+   * @param {Array} rsids - Array of rsIDs to fetch detailed data for
+   * @param {Function} progressCallback - Progress reporting callback
+   * @returns {Promise<Object>} Detailed gene data
+   */
+  async fetchDetailedGeneData(rsids, progressCallback) {
+    if (!rsids || rsids.length === 0) {
+      return {};
+    }
+    
+    try {
+      const batchSize = 10; // Smaller batches for better progress reporting
+      const totalSnps = rsids.length;
+      let processedSnps = 0;
+      let detailedData = {};
+      
+      // Process in batches
+      for (let i = 0; i < rsids.length; i += batchSize) {
+        const batch = rsids.slice(i, i + batchSize);
+        
+        if (progressCallback) {
+          progressCallback({
+            stage: `Fetching details for SNPs ${processedSnps + 1}-${processedSnps + batch.length}`,
+            progress: (processedSnps / totalSnps) * 100
+          });
+        }
+        
+        // Process batch
+        const batchResults = await Promise.all(batch.map(async (rsid) => {
+          try {
+            const info = await this.fetchSnp(rsid);
+            return { rsid, info };
+          } catch (error) {
+            console.warn(`Error fetching details for ${rsid}:`, error);
+            return { rsid, error: error.message };
+          }
+        }));
+        
+        // Add to results
+        for (const result of batchResults) {
+          if (result.info) {
+            detailedData[result.rsid] = result.info;
+          }
+        }
+        
+        processedSnps += batch.length;
+      }
+      
+      if (progressCallback) {
+        progressCallback({
+          stage: "Detail fetching complete",
+          progress: 100
+        });
+      }
+      
+      return detailedData;
+    } catch (error) {
+      console.error("Error fetching detailed gene data:", error);
+      throw error;
     }
   }
 };
