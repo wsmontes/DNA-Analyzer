@@ -4,6 +4,7 @@
  * Gerencia os dados de SNPs, busca informações e mantém cache.
  */
 import ProxyManager from './proxyManager.js';
+import SNPediaManager from './snpediaManager.js';
 
 const DataManager = {
   snpCache: new Map(),
@@ -11,6 +12,12 @@ const DataManager = {
   filteredResults: [],
   currentPage: 1,
   rowsPerPage: 20,
+  
+  // Inicializar
+  init() {
+    // Initialize SNPedia Manager
+    SNPediaManager.init();
+  },
   
   // Obter dados de SNP em cache, se disponível
   getCachedSnp(rsid) {
@@ -90,21 +97,26 @@ const DataManager = {
     return this.filteredResults;
   },
 
-  // Buscar informações do SNPedia via API do Wikipedia
+  // Buscar informações do SNPedia via API do SNPedia (não Wikipedia)
   async fetchSnpediaSummary(rsid) {
     try {
-      // A API do Wikipedia já suporta CORS, então não é necessário proxy
-      const res = await fetch(`https://en.wikipedia.org/w/api.php?` +
-        new URLSearchParams({
-          action: 'query', prop: 'extracts', format: 'json',
-          titles: rsid, origin: '*', exintro: '', explaintext: ''
-        }));
-      if (!res.ok) throw new Error(`Wikipedia API error (${res.status})`);
-      const wpData = await res.json();
-      const pages = wpData.query?.pages || {};
-      const page = Object.values(pages)[0];
-      if (page && !page.missing && page.extract) {
-        return page.extract;
+      // Use SNPediaManager instead of Wikipedia API
+      const snpData = await SNPediaManager.getSNP(rsid);
+      
+      if (snpData && snpData.summary) {
+        let result = snpData.summary;
+        
+        // Add magnitude information if available
+        if (snpData.magnitude) {
+          result = `[Magnitude: ${snpData.magnitude}] ${result}`;
+        }
+        
+        // Add categories as keywords
+        if (snpData.categories && snpData.categories.length > 0) {
+          result += `\n\nCategories: ${snpData.categories.join(', ')}`;
+        }
+        
+        return result;
       } else {
         return 'Nenhum artigo do SNPedia encontrado ou resumo disponível.';
       }

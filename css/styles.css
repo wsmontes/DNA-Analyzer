@@ -606,3 +606,22 @@ details pre {
 ::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
 }
+
+/* Footer com atribuição */
+.attribution-footer {
+  background: #f1f1f1;
+  padding: 16px 0;
+  margin-top: 40px;
+  border-top: 1px solid var(--gray-light);
+  font-size: 0.9rem;
+  color: var(--gray);
+}
+
+.attribution-footer a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.attribution-footer a:hover {
+  text-decoration: underline;
+}

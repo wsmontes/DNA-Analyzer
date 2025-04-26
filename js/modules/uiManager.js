@@ -339,7 +339,7 @@ const UIManager = {
       popFreq = { 'Info': 'Ignorado devido a erro na busca de variação.' };
     }
 
-    // Buscar resumo do SNPedia
+    // Buscar informações do SNPedia (agora usando a API correta)
     try {
       snpediaSummary = await DataManager.fetchSnpediaSummary(rsid);
     } catch (err) {
@@ -411,8 +411,11 @@ const UIManager = {
       <h3>Fenótipos</h3>
       <ul class="phenotype-list">${phenotypesHtml}</ul>
       
-      <h3>Resumo do SNPedia</h3>
+      <h3>Informações do SNPedia</h3>
       <div style="padding:16px;background:#f8f9fa;border-radius:var(--radius);">${snpediaSummary.replace(/\n/g, '<br>')}</div>
+      <div style="font-size:0.8em;color:var(--gray);text-align:right;margin-top:4px;">
+        Dados do SNPedia sob licença <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">CC BY-NC-SA 3.0 US</a>
+      </div>
       
       <details>
         <summary>JSON de Variação Completo do Ensembl</summary>

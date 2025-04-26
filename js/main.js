@@ -9,6 +9,7 @@ import DataManager from './modules/dataManager.js';
 import UIManager from './modules/uiManager.js';
 import FileProcessor from './modules/fileProcessor.js';
 import ChartManager from './modules/chartManager.js';
+import SNPediaManager from './modules/snpediaManager.js';
 
 // Expor ProxyManager para facilitar o debug na console
 window.proxyManager = ProxyManager;
@@ -20,10 +21,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Inicializar gerenciadores
   UIManager.init();
   ChartManager.init();
+  DataManager.init();
 
   // Inicializar o ProxyManager em segundo plano
   ProxyManager.initialize();
 
+  // Adicionar atribuição do SNPedia ao rodapé
+  addSNPediaAttribution();
+  
   // Configuração do event listener para upload de arquivo
   const fileInput = document.getElementById('fileInput');
   
@@ -68,10 +73,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Adicionar função para baixar relatório
+  // Adicionar função para buscar detalhes de um SNP
   window.fetchDetails = async (rsid) => {
     await UIManager.fetchDetails(rsid);
   };
   
   console.log('DNA Explorer inicializado com sucesso!');
 });
+
+// Função para adicionar atribuição do SNPedia
+function addSNPediaAttribution() {
+  const footer = document.createElement('footer');
+  footer.className = 'attribution-footer';
+  footer.innerHTML = `
+    <div class="container">
+      <p>
+        SNP data provided by <a href="https://www.snpedia.com/" target="_blank">SNPedia</a>. 
+        SNPedia content is available under a 
+        <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">
+          Creative Commons Attribution-Noncommercial-Share Alike 3.0 United States License
+        </a>.
+      </p>
+    </div>
+  `;
+  document.body.appendChild(footer);
+}
