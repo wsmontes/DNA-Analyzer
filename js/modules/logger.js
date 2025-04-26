@@ -77,19 +77,58 @@ const Logger = {
   },
   
   /**
-   * Log an API response
+   * Log an API response with MediaWiki-specific handling
    * @param {String} endpoint - The API endpoint
    * @param {Object} response - The response data
-   * @param {String} status - The response status (success, error)
+   * @param {String} status - The response status (success, error, cache)
    */
   logApiResponse(endpoint, response, status = 'success') {
     // Create log entry
     const timestamp = new Date().toISOString();
+    
+    // Handle MediaWiki API specific responses
+    let processedResponse = response;
+    if (response && typeof response === 'object') {
+      // Check for MediaWiki API errors
+      if (response.error) {
+        status = 'error';
+        processedResponse = {
+          error: {
+            code: response.error.code,
+            info: response.error.info
+          },
+          originalResponse: this._safeClone(response)
+        };
+      }
+      
+      // Check for warnings
+      if (response.warnings) {
+        processedResponse = {
+          ...this._safeClone(response),
+          _hasWarnings: true
+        };
+        
+        // Log warnings separately
+        this.warn(`API ${endpoint} returned warnings:`, response.warnings);
+      }
+      
+      // Extract MediaWiki query/parse results into a more manageable format
+      if (response.query) {
+        processedResponse = {
+          ...this._safeClone(response),
+          _queryData: {
+            found: response.query.pages ? response.query.pages.length : 0,
+            hasContinue: !!response.continue
+          }
+        };
+      }
+    }
+    
     const logEntry = {
       timestamp,
       endpoint,
       status,
-      response: this._safeClone(response),
+      response: this._safeClone(processedResponse),
     };
     
     // Add to stored responses with limit
@@ -100,9 +139,20 @@ const Logger = {
     
     // Log to console if debug level
     if (this.currentLevel <= this.LEVELS.DEBUG) {
-      const colorStyle = status === 'success' ? 'color: #4CAF50' : 'color: #F44336';
+      let colorStyle = status === 'success' ? 'color: #4CAF50' : 
+                       status === 'cache' ? 'color: #2196F3' : 'color: #F44336';
+                       
+      if (response && response.warnings) {
+        colorStyle = 'color: #FF9800'; // Warnings in orange
+      }
+      
       console.groupCollapsed(`%c[API] ${endpoint} (${status})`, `${colorStyle}; font-weight: bold;`);
       console.log('Timestamp:', timestamp);
+      
+      if (response && response.requestParams) {
+        console.log('Request Parameters:', response.requestParams);
+      }
+      
       console.log('Response:', response);
       console.groupEnd();
     }
@@ -111,11 +161,16 @@ const Logger = {
   },
   
   /**
-   * Get all stored API response logs
+   * Get all stored API response logs filtered by type
+   * @param {String} type - Optional filter by status type (success, error, cache)
    * @returns {Array} The stored API response logs
    */
-  getApiLogs() {
-    return this.apiResponses;
+  getApiLogs(type = null) {
+    if (!type) {
+      return this.apiResponses;
+    }
+    
+    return this.apiResponses.filter(log => log.status === type);
   },
   
   /**

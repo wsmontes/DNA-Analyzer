@@ -2,8 +2,7 @@
  * SNPediaManager
  * 
  * Module for handling interactions with the SNPedia API
- * Following guidelines from https://www.snpedia.com/index.php/Bulk
- * With continuation support from MediaWiki API
+ * Following guidelines from https://www.mediawiki.org/wiki/API
  */
 import Logger from './logger.js';
 
@@ -67,24 +66,49 @@ const SNPediaManager = {
     this.isProcessing = true;
     const { params, callback, cacheKey } = this.requestQueue.shift();
     
+    // Add standard MediaWiki API parameters
+    const apiParams = {
+      format: 'json',  // Use JSON format for easier parsing
+      formatversion: '2', // Use newer format version for more consistent output
+      errorformat: 'plaintext', // More readable error messages
+      origin: '*',  // Required for CORS
+      ...params
+    };
+    
     // Build URL with parameters
     const url = new URL(this.baseUrl);
-    url.search = new URLSearchParams({
-      ...params,
-      format: 'json',
-      origin: '*'
-    }).toString();
+    url.search = new URLSearchParams(apiParams).toString();
     
     Logger.info(`[SNPediaManager] Making API request: ${url}`);
     
     fetch(url)
       .then(response => {
-        if (!response.ok) throw new Error(`SNPedia API error: ${response.status}`);
+        if (!response.ok) {
+          // Log the specific MediaWiki API error if available
+          const apiError = response.headers.get('MediaWiki-API-Error');
+          throw new Error(apiError || `SNPedia API error: ${response.status}`);
+        }
         return response.json();
       })
       .then(data => {
-        // Log the API response
-        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, data);
+        // Check for API errors in the response
+        if (data.error) {
+          // Log detailed API error information
+          Logger.logApiResponse(`SNPedia Error: ${params.action || 'query'}`, {
+            code: data.error.code,
+            info: data.error.info,
+            params: params
+          }, 'error');
+          
+          throw new Error(`MediaWiki API error: ${data.error.code}: ${data.error.info}`);
+        }
+        
+        // Log the API response with more detailed information
+        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, {
+          data: data,
+          requestParams: params,
+          timestamp: new Date().toISOString()
+        });
         
         // Cache the result (24 hour expiry)
         this.cache.set(cacheKey, {
@@ -96,7 +120,10 @@ const SNPediaManager = {
       })
       .catch(error => {
         Logger.error('[SNPediaManager] API error:', error);
-        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, { error: error.message }, 'error');
+        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, { 
+          error: error.message,
+          requestParams: params
+        }, 'error');
         callback(error, null);
       })
       .finally(() => {
@@ -113,9 +140,11 @@ const SNPediaManager = {
   getSNP(rsid) {
     return new Promise((resolve, reject) => {
       this.queueRequest({
-        action: 'parse',
+        action: 'parse',  // Using parse action to get HTML content
         page: rsid,
-        prop: 'text|categories|templates'
+        prop: 'text|categories|templates',
+        redirects: true,  // Follow redirects
+        curtimestamp: true // Include current timestamp for cache management
       }, (error, data) => {
         if (error) return reject(error);
         resolve(this.parseSnpResult(data, rsid));
@@ -508,6 +537,8 @@ const SNPediaManager = {
         list: 'categorymembers',
         cmtitle: category,
         cmlimit: 500, // Maximum allowed in one request
+        cmtype: 'page', // Only get pages, not subcategories
+        cmprop: 'title|ids|sortkey',  // Get additional properties
         formatversion: '2'
       };
       
@@ -523,7 +554,8 @@ const SNPediaManager = {
             .map(item => ({
               rsid: item.title,
               category: category.replace('Category:', ''),
-              magnitude: parseInt(category.split('_')[1]) || 0
+              magnitude: parseInt(category.split('_')[1]) || 0,
+              pageid: item.pageid  // Store the page ID for potential future uses
             }));
           
           allSNPs = [...allSNPs, ...snps];
@@ -533,7 +565,8 @@ const SNPediaManager = {
             progressCallback({
               found: allSNPs.length,
               progress: data.continue ? 0.5 : 1,
-              done: !data.continue
+              done: !data.continue,
+              batchSize: snps.length
             });
           }
           

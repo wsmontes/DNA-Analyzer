@@ -172,7 +172,14 @@ function addLogViewerButton() {
   logButton.innerText = 'View API Logs';
   logButton.addEventListener('click', () => {
     console.groupCollapsed('DNA Explorer API Logs');
-    console.log('API Response Logs:', Logger.getApiLogs());
+    console.log('All API Responses:', Logger.getApiLogs());
+    console.log('Success Responses:', Logger.getApiLogs('success'));
+    console.log('Error Responses:', Logger.getApiLogs('error'));
+    console.log('Cache Hits:', Logger.getApiLogs('cache'));
+    
+    // MediaWiki API help
+    console.log('MediaWiki API Documentation: https://www.mediawiki.org/wiki/API');
+    console.log('SNPedia API Endpoint: https://bots.snpedia.com/api.php');
     console.log('To view more details, access window.logger.getApiLogs()');
     console.groupEnd();
   });
