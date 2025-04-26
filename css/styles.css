@@ -625,3 +625,40 @@ details pre {
 .attribution-footer a:hover {
   text-decoration: underline;
 }
+
+/* Progress bar styles */
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: rgba(67, 97, 238, 0.1);
+  border-radius: 4px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.progress-bar > div {
+  height: 100%;
+  background-color: var(--primary);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar.indeterminate .progress-track {
+  width: 30%;
+  height: 100%;
+  background-color: var(--primary);
+  position: relative;
+  animation: progress 2s infinite linear;
+}
+
+.progress-text {
+  font-size: 0.9rem;
+  color: var(--primary);
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+@keyframes progress {
+  0% { left: -30%; }
+  100% { left: 100%; }
+}

@@ -3,6 +3,7 @@
  * 
  * Module for handling interactions with the SNPedia API
  * Following guidelines from https://www.snpedia.com/index.php/Bulk
+ * With continuation support from MediaWiki API
  */
 
 const SNPediaManager = {
@@ -115,28 +116,188 @@ const SNPediaManager = {
   },
 
   /**
-   * Search for multiple SNPs in SNPedia category
-   * @param {number} limit - Maximum number of SNPs to fetch
-   * @returns {Promise} Promise resolving to array of SNP names
+   * Get batch of SNP information from SNPedia using generator
+   * @param {Array} rsids - Array of SNP rsIDs
+   * @returns {Promise} Promise resolving to an object with SNP data by rsid
    */
-  getAllSNPs(limit = 500) {
+  getMultipleSNPs(rsids) {
+    if (!rsids || !rsids.length) {
+      return Promise.resolve({});
+    }
+    
+    // Split into batches of 50 (MediaWiki API limitation)
+    const batchSize = 50;
+    const batches = [];
+    
+    for (let i = 0; i < rsids.length; i += batchSize) {
+      batches.push(rsids.slice(i, i + batchSize));
+    }
+    
+    console.log(`Processing ${rsids.length} SNPs in ${batches.length} batches`);
+    
+    // Process all batches sequentially to avoid overwhelming the API
+    return batches.reduce((promiseChain, batch) => {
+      return promiseChain.then(allResults => {
+        return this.getSNPBatch(batch).then(batchResults => {
+          return { ...allResults, ...batchResults };
+        });
+      });
+    }, Promise.resolve({}));
+  },
+  
+  /**
+   * Get a batch of SNPs using generator
+   * @param {Array} rsids - Batch of rsIDs (max 50)
+   * @returns {Promise} Promise resolving to object with SNP data
+   */
+  getSNPBatch(rsids) {
     return new Promise((resolve, reject) => {
       this.queueRequest({
         action: 'query',
-        list: 'categorymembers',
-        cmtitle: 'Category:Is_a_snp',
-        cmlimit: limit
+        titles: rsids.join('|'),
+        prop: 'revisions|categories|templates',
+        rvprop: 'content',
+        rvslots: 'main',
+        formatversion: '2'
       }, (error, data) => {
         if (error) return reject(error);
         
+        // Process batch results
+        const results = {};
+        if (data.query && data.query.pages) {
+          data.query.pages.forEach(page => {
+            const rsid = page.title;
+            
+            // Skip missing pages
+            if (page.missing) {
+              results[rsid] = { 
+                rsid, 
+                summary: "No information available in SNPedia",
+                references: []
+              };
+              return;
+            }
+            
+            // Extract categories
+            const categories = (page.categories || [])
+              .map(cat => cat.title || '')
+              .filter(cat => !cat.includes('Is_a_snp') && !cat.includes('SNP'));
+            
+            // Extract content
+            let content = '';
+            if (page.revisions && page.revisions.length) {
+              const revision = page.revisions[0];
+              if (revision.slots && revision.slots.main) {
+                content = revision.slots.main.content || '';
+              }
+            }
+            
+            // Extract magnitude if present
+            let magnitude = null;
+            const magnitudeMatch = content.match(/\|\s*magnitude\s*=\s*([+-\.\d]+)/);
+            if (magnitudeMatch && magnitudeMatch[1]) {
+              magnitude = parseFloat(magnitudeMatch[1]);
+            }
+            
+            results[rsid] = {
+              rsid,
+              summary: this.extractSummary(content),
+              magnitude,
+              categories,
+              content // Include full content for detailed parsing if needed
+            };
+          });
+        }
+        
+        resolve(results);
+      });
+    });
+  },
+
+  /**
+   * Search for all SNPs in SNPedia category with proper continuation
+   * @param {Object} options - Options like limit, progressCallback
+   * @returns {Promise} Promise resolving to array of SNP names
+   */
+  getAllSNPs(options = {}) {
+    const { 
+      limit = Infinity, // Default to get all SNPs
+      progressCallback = null // Optional callback for progress updates
+    } = options;
+    
+    return new Promise((resolve, reject) => {
+      let allSNPs = [];
+      let params = {
+        action: 'query',
+        list: 'categorymembers',
+        cmtitle: 'Category:Is_a_snp',
+        cmlimit: 500, // Maximum allowed in one request
+        formatversion: '2'
+      };
+      
+      // Helper function to process results with continuation
+      const processResults = (error, data) => {
+        if (error) return reject(error);
+        
+        // Extract SNPs from this batch
         if (data.query && data.query.categorymembers) {
           const snps = data.query.categorymembers.map(item => item.title);
-          resolve(snps);
+          allSNPs = [...allSNPs, ...snps];
+          
+          // Report progress if callback provided
+          if (progressCallback) {
+            progressCallback({
+              loaded: allSNPs.length,
+              total: allSNPs.length + (data.continue ? '...' : ''),
+              done: !data.continue
+            });
+          }
+          
+          // Check if we need to continue or have reached the limit
+          if (data.continue && allSNPs.length < limit) {
+            // Use continuation parameters for next request
+            const nextParams = { ...params, ...data.continue };
+            this.queueRequest(nextParams, processResults);
+          } else {
+            // We're done - either no more results or reached limit
+            resolve(limit < Infinity ? allSNPs.slice(0, limit) : allSNPs);
+          }
         } else {
           reject(new Error('Invalid response from SNPedia API'));
         }
-      });
+      };
+      
+      // Start the first request
+      this.queueRequest(params, processResults);
     });
+  },
+  
+  /**
+   * Extract a clean summary from wiki text content
+   * @param {string} content - Wiki text content
+   * @returns {string} Clean summary text
+   */
+  extractSummary(content) {
+    if (!content) return "No content available";
+    
+    // Remove wiki markup for a cleaner text
+    let summary = content
+      .split('\n').slice(0, 10).join('\n') // Take first 10 lines
+      .replace(/\{\{.*?\}\}/g, '') // Remove templates
+      .replace(/\[\[(.*?)\]\]/g, '$1') // Extract link text
+      .replace(/\'\'\'(.*?)\'\'\'/g, '$1') // Remove bold
+      .replace(/\'\'(.*?)\'\'/g, '$1') // Remove italics
+      .replace(/\=\=(.*?)\=\=/g, '') // Remove headings
+      .replace(/\n+/g, ' ') // Replace newlines with spaces
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    // Limit length and add ellipsis if too long
+    if (summary.length > 300) {
+      summary = summary.substring(0, 300) + '...';
+    }
+    
+    return summary || "No readable summary available";
   },
   
   /**

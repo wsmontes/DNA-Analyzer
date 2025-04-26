@@ -1,7 +1,7 @@
 /**
  * DataManager
  * 
- * Gerencia os dados de SNPs, busca informações e mantém cache.
+ * Updated to use improved SNPediaManager with continuation
  */
 import ProxyManager from './proxyManager.js';
 import SNPediaManager from './snpediaManager.js';
@@ -123,6 +123,76 @@ const DataManager = {
     } catch (err) {
       console.error(`Erro ao buscar resumo do SNPedia para ${rsid}:`, err);
       return 'Falha ao buscar informações do SNPedia.';
+    }
+  },
+
+  /**
+   * Fetch SNPedia data for multiple SNPs in batch with progress reporting
+   * @param {Array} rsids - Array of SNP rsIDs
+   * @param {Function} progressCallback - Callback for progress updates
+   * @returns {Promise<Object>} - Promise resolving to object of SNP data keyed by rsid
+   */
+  async fetchSnpediaBatch(rsids, progressCallback) {
+    if (!rsids || !rsids.length) {
+      return {};
+    }
+    
+    try {
+      return await SNPediaManager.getMultipleSNPs(rsids, {
+        progressCallback
+      });
+    } catch (err) {
+      console.error("Error in batch SNPedia fetch:", err);
+      return {};
+    }
+  },
+  
+  /**
+   * Get a list of all SNPs in SNPedia with continuation support
+   * @param {Number} limit - Maximum number of SNPs to fetch (defaults to all)
+   * @param {Function} progressCallback - Callback for progress updates
+   * @returns {Promise<Array>} - Promise resolving to array of SNP names
+   */
+  async getAllSnpediaSNPs(limit = Infinity, progressCallback) {
+    try {
+      return await SNPediaManager.getAllSNPs({
+        limit,
+        progressCallback
+      });
+    } catch (err) {
+      console.error("Error fetching all SNPedia SNPs:", err);
+      return [];
+    }
+  },
+
+  /**
+   * Get SNPedia data for user's SNPs that exist in SNPedia
+   * @param {Function} progressCallback - Progress reporting callback
+   * @returns {Promise<Object>} - Object mapping rsid to SNPedia data
+   */
+  async getRelevantSnpediaSNPs(progressCallback) {
+    try {
+      // First get all SNPs from SNPedia (using continuation)
+      const allSnpediaSNPs = await this.getAllSnpediaSNPs(Infinity, progressCallback);
+      
+      // Find overlap with user's SNPs
+      const userSnpSet = new Set(this.allResults.map(snp => snp.rsid));
+      const relevantSNPs = allSnpediaSNPs.filter(snp => userSnpSet.has(snp));
+      
+      if (progressCallback) {
+        progressCallback({
+          loaded: 0,
+          total: relevantSNPs.length,
+          stage: 'Fetching details for matching SNPs'
+        });
+      }
+      
+      // Fetch detailed data for the relevant SNPs
+      return await this.fetchSnpediaBatch(relevantSNPs, progressCallback);
+      
+    } catch (err) {
+      console.error("Error getting relevant SNPedia data:", err);
+      return {};
     }
   }
 };

@@ -1,7 +1,7 @@
 /**
  * DNA Explorer - Aplicação principal
  * 
- * Este arquivo inicializa e coordena todos os módulos da aplicação
+ * Updated to support new SNPedia features with continuation
  */
 
 import ProxyManager from './modules/proxyManager.js';
@@ -79,6 +79,74 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   
   console.log('DNA Explorer inicializado com sucesso!');
+
+  // Add UI element for comprehensive SNPedia analysis
+  const dataSection = document.getElementById('dataSection');
+  if (dataSection) {
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'action-buttons';
+    btnContainer.style.marginTop = '20px';
+    btnContainer.style.textAlign = 'center';
+    
+    const snpediaBtn = document.createElement('button');
+    snpediaBtn.className = 'btn btn-primary';
+    snpediaBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5h11zm-11-1A1.5 1.5 0 0 0 1 3.5v10A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-10A1.5 1.5 0 0 0 13.5 2h-11zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5z"/>
+      </svg>
+      Comprehensive SNPedia Analysis
+    `;
+    
+    snpediaBtn.addEventListener('click', async () => {
+      UIManager.showLoading('Starting comprehensive SNPedia analysis...');
+      
+      try {
+        // Get all SNPs from SNPedia that match user data
+        await DataManager.getRelevantSnpediaSNPs(progress => {
+          UIManager.updateProgress(progress);
+        });
+        
+        // Display results in a new section
+        createSnpediaResultsSection();
+        
+      } catch (error) {
+        console.error("Error during comprehensive SNPedia analysis:", error);
+        UIManager.showError("Failed to complete SNPedia analysis: " + error.message);
+      } finally {
+        UIManager.hideLoading();
+      }
+    });
+    
+    btnContainer.appendChild(snpediaBtn);
+    dataSection.appendChild(btnContainer);
+  }
+
+  function createSnpediaResultsSection() {
+    const container = document.querySelector('main.container');
+    
+    // Create new section for SNPedia results
+    const section = document.createElement('section');
+    section.id = 'snpediaResultsSection';
+    section.className = 'section';
+    
+    section.innerHTML = `
+      <div class="section-header">
+        <h2 class="section-title">SNPedia Analysis Results</h2>
+        <div>
+          <span style="font-size:0.8em;color:var(--gray)">
+            Data from SNPedia under <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">CC BY-NC-SA 3.0 US</a>
+          </span>
+        </div>
+      </div>
+      <div id="snpediaResults">
+        <p>Detailed SNPedia analysis complete. Results will be displayed here.</p>
+      </div>
+    `;
+    
+    // Insert before the details section
+    const detailsEl = document.getElementById('details');
+    container.insertBefore(section, detailsEl);
+  }
 });
 
 // Função para adicionar atribuição do SNPedia

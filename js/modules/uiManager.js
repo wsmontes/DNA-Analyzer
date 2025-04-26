@@ -1,7 +1,7 @@
 /**
  * UIManager
  * 
- * Responsável por gerenciar a interface do usuário e renderização
+ * Add progress bar handling for continued API queries
  */
 import DataManager from './dataManager.js';
 
@@ -76,7 +76,35 @@ const UIManager = {
     this.elements.loading.innerHTML = `<span class="spinner"></span> ${message}`;
   },
 
-  // Ocultar indicador de carregamento
+  // Update loading with progress
+  updateProgress(progress) {
+    if (!this.elements.loading) return;
+    
+    let progressText = '';
+    if (progress && typeof progress === 'object') {
+      const { loaded, total, done } = progress;
+      
+      if (loaded !== undefined && total !== undefined) {
+        if (typeof total === 'number') {
+          // We know the total
+          const percentage = Math.round((loaded / total) * 100);
+          progressText = `<div class="progress-bar"><div style="width:${percentage}%"></div></div>
+                          <div class="progress-text">${loaded} of ${total} (${percentage}%)</div>`;
+        } else {
+          // We don't know the exact total (e.g., when using continuation)
+          progressText = `<div class="progress-bar indeterminate">
+                            <div class="progress-track"></div>
+                          </div>
+                          <div class="progress-text">${loaded} items loaded</div>`;
+        }
+      }
+    }
+    
+    if (progressText) {
+      this.elements.loading.innerHTML += progressText;
+    }
+  },
+
   hideLoading() {
     this.elements.loading.style.display = 'none';
   },
