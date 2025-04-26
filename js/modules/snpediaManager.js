@@ -10,8 +10,304 @@ const SNPediaManager = {
   baseUrl: 'https://bots.snpedia.com/api.php',
   requestQueue: [],
   isProcessing: false,
-  requestDelay: 1000,  
+  requestDelay: 1000, // Delay between requests to avoid overwhelming the server (1 second)
   cache: new Map(),
+  
+  /**
+   * Initialize the SNPedia manager
+   */
+  init() {
+    Logger.info('[SNPediaManager] Initialized');
+    // Start the request queue processor
+    this.processQueue();
+  },
+
+  /**
+   * Add a request to the queue with rate limiting
+   * @param {Object} params - API parameters
+   * @param {Function} callback - Function to call with results
+   */
+  queueRequest(params, callback) {
+    const cacheKey = JSON.stringify(params);
+    
+    // Check cache first
+    if (this.cache.has(cacheKey)) {
+      const cachedData = this.cache.get(cacheKey);
+      if (cachedData.expires > Date.now()) {
+        Logger.debug('[SNPediaManager] Using cached data');
+        setTimeout(() => {
+          Logger.logApiResponse('SNPedia CACHE', cachedData.data, 'cache');
+          callback(null, cachedData.data);
+        }, 0);
+        return;
+      } else {
+        this.cache.delete(cacheKey);
+      }
+    }
+    
+    // Add to queue
+    this.requestQueue.push({ params, callback, cacheKey });
+    
+    // Start processing if not already
+    if (!this.isProcessing) {
+      this.processQueue();
+    }
+  },
+
+  /**
+   * Process the request queue with rate limiting
+   */
+  processQueue() {
+    if (this.requestQueue.length === 0) {
+      this.isProcessing = false;
+      return;
+    }
+    
+    this.isProcessing = true;
+    const { params, callback, cacheKey } = this.requestQueue.shift();
+    
+    // Add standard MediaWiki API parameters
+    const apiParams = {
+      format: 'json',  // Use JSON format for easier parsing
+      formatversion: '2', // Use newer format version for more consistent output
+      errorformat: 'plaintext', // More readable error messages
+      origin: '*',  // Required for CORS
+      ...params
+    };
+    
+    // Build URL with parameters
+    const url = new URL(this.baseUrl);
+    url.search = new URLSearchParams(apiParams).toString();
+    
+    Logger.info(`[SNPediaManager] Making API request: ${url}`);
+    
+    fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          // Log the specific MediaWiki API error if available
+          const apiError = response.headers.get('MediaWiki-API-Error');
+          throw new Error(apiError || `SNPedia API error: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        // Check for API errors in the response
+        if (data.error) {
+          // Log detailed API error information
+          Logger.logApiResponse(`SNPedia Error: ${params.action || 'query'}`, {
+            code: data.error.code,
+            info: data.error.info,
+            params: params
+          }, 'error');
+          
+          throw new Error(`MediaWiki API error: ${data.error.code}: ${data.error.info}`);
+        }
+        
+        // Log the API response with more detailed information
+        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, {
+          data: data,
+          requestParams: params,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Cache the result (24 hour expiry)
+        this.cache.set(cacheKey, {
+          data,
+          expires: Date.now() + (24 * 60 * 60 * 1000)
+        });
+        
+        callback(null, data);
+      })
+      .catch(error => {
+        Logger.error('[SNPediaManager] API error:', error);
+        Logger.logApiResponse(`SNPedia: ${params.action || 'query'}`, { 
+          error: error.message,
+          requestParams: params
+        }, 'error');
+        callback(error, null);
+      })
+      .finally(() => {
+        // Schedule the next request with delay
+        setTimeout(() => this.processQueue(), this.requestDelay);
+      });
+  },
+
+  /**
+   * Get SNP information from SNPedia
+   * @param {string} rsid - The SNP rsID
+   * @returns {Promise} Promise resolving to SNP data
+   */
+  getSNP(rsid) {
+    return new Promise((resolve, reject) => {
+      this.queueRequest({
+        action: 'parse',  // Using parse action to get HTML content
+        page: rsid,
+        prop: 'text|categories|templates',
+        redirects: true,  // Follow redirects
+        curtimestamp: true // Include current timestamp for cache management
+      }, (error, data) => {
+        if (error) return reject(error);
+        resolve(this.parseSnpResult(data, rsid));
+      });
+    });
+  },
+
+  /**
+   * Get batch of SNP information from SNPedia using generator
+   * @param {Array} rsids - Array of SNP rsIDs
+   * @returns {Promise} Promise resolving to an object with SNP data by rsid
+   */
+  getMultipleSNPs(rsids) {
+    if (!rsids || !rsids.length) {
+      return Promise.resolve({});
+    }
+    
+    // Split into batches of 50 (MediaWiki API limitation)
+    const batchSize = 50;
+    const batches = [];
+    
+    for (let i = 0; i < rsids.length; i += batchSize) {
+      batches.push(rsids.slice(i, i + batchSize));
+    }
+    
+    console.log(`Processing ${rsids.length} SNPs in ${batches.length} batches`);
+    
+    // Process all batches sequentially to avoid overwhelming the API
+    return batches.reduce((promiseChain, batch) => {
+      return promiseChain.then(allResults => {
+        return this.getSNPBatch(batch).then(batchResults => {
+          return { ...allResults, ...batchResults };
+        });
+      });
+    }, Promise.resolve({}));
+  },
+  
+  /**
+   * Get a batch of SNPs using generator
+   * @param {Array} rsids - Batch of rsIDs (max 50)
+   * @returns {Promise} Promise resolving to object with SNP data
+   */
+  getSNPBatch(rsids) {
+    return new Promise((resolve, reject) => {
+      this.queueRequest({
+        action: 'query',
+        titles: rsids.join('|'),
+        prop: 'revisions|categories|templates',
+        rvprop: 'content',
+        rvslots: 'main',
+        formatversion: '2'
+      }, (error, data) => {
+        if (error) return reject(error);
+        
+        // Process batch results
+        const results = {};
+        if (data.query && data.query.pages) {
+          data.query.pages.forEach(page => {
+            const rsid = page.title;
+            
+            // Skip missing pages
+            if (page.missing) {
+              results[rsid] = { 
+                rsid, 
+                summary: "No information available in SNPedia",
+                references: []
+              };
+              return;
+            }
+            
+            // Extract categories
+            const categories = (page.categories || [])
+              .map(cat => cat.title || '')
+              .filter(cat => !cat.includes('Is_a_snp') && !cat.includes('SNP'));
+            
+            // Extract content
+            let content = '';
+            if (page.revisions && page.revisions.length) {
+              const revision = page.revisions[0];
+              if (revision.slots && revision.slots.main) {
+                content = revision.slots.main.content || '';
+              }
+            }
+            
+            // Extract magnitude if present
+            let magnitude = null;
+            const magnitudeMatch = content.match(/\|\s*magnitude\s*=\s*([+-\.\d]+)/);
+            if (magnitudeMatch && magnitudeMatch[1]) {
+              magnitude = parseFloat(magnitudeMatch[1]);
+            }
+            
+            results[rsid] = {
+              rsid,
+              summary: this.extractSummary(content),
+              magnitude,
+              categories,
+              content // Include full content for detailed parsing if needed
+            };
+          });
+        }
+        
+        resolve(results);
+      });
+    });
+  },
+
+  /**
+   * Search for all SNPs in SNPedia category with proper continuation
+   * @param {Object} options - Options like limit, progressCallback
+   * @returns {Promise} Promise resolving to array of SNP names
+   */
+  getAllSNPs(options = {}) {
+    const { 
+      limit = Infinity, // Default to get all SNPs
+      progressCallback = null // Optional callback for progress updates
+    } = options;
+    
+    return new Promise((resolve, reject) => {
+      let allSNPs = [];
+      let params = {
+        action: 'query',
+        list: 'categorymembers',
+        cmtitle: 'Category:Is_a_snp',
+        cmlimit: 500, // Maximum allowed in one request
+        formatversion: '2'
+      };
+      
+      // Helper function to process results with continuation
+      const processResults = (error, data) => {
+        if (error) return reject(error);
+        
+        // Extract SNPs from this batch
+        if (data.query && data.query.categorymembers) {
+          const snps = data.query.categorymembers.map(item => item.title);
+          allSNPs = [...allSNPs, ...snps];
+          
+          // Report progress if callback provided
+          if (progressCallback) {
+            progressCallback({
+              loaded: allSNPs.length,
+              total: allSNPs.length + (data.continue ? '...' : ''),
+              done: !data.continue
+            });
+          }
+          
+          // Check if we need to continue or have reached the limit
+          if (data.continue && allSNPs.length < limit) {
+            // Use continuation parameters for next request
+            const nextParams = { ...params, ...data.continue };
+            this.queueRequest(nextParams, processResults);
+          } else {
+            // We're done - either no more results or reached limit
+            resolve(limit < Infinity ? allSNPs.slice(0, limit) : allSNPs);
+          }
+        } else {
+          reject(new Error('Invalid response from SNPedia API'));
+        }
+      };
+      
+      // Start the first request
+      this.queueRequest(params, processResults);
+    });
+  },
   
   /**
    * Extract a clean summary from wiki text content
@@ -182,194 +478,139 @@ const SNPediaManager = {
    * @returns {Promise<Array>} Array of high magnitude SNPs
    */
   async getHighMagnitudeSNPs(options = {}) {
-    const { progressCallback = null, minMagnitude = 3 } = options;
+    const { progressCallback } = options;
     
-    Logger.info(`[SNPediaManager] Searching for SNPs with magnitude >= ${minMagnitude}`);
-    
+    // We'll fetch SNPs by magnitude category, starting with highest
     try {
-      // Try to use cache first
-      const cacheKey = `high_magnitude_${minMagnitude}`;
-      const cached = this.cache.get(cacheKey);
+      let highMagnitudeSNPs = [];
       
-      if (cached) {
-        Logger.info(`[SNPediaManager] Using cached high magnitude SNPs (${cached.length} items)`);
-        if (progressCallback) {
-          progressCallback({
-            stage: 'Retrieved from cache',
-            progress: 100,
-            found: cached.length
-          });
-        }
-        return cached;
-      }
-      
-      // Set up query to find SNPs with magnitude template
-      const results = await this.getSnpsMatchingCriteria({
-        categories: [`Magnitude ${minMagnitude}`],
-        limit: 500,
+      // First get the most significant SNPs (magnitude 10)
+      const magnitude10 = await this.getSnpsInCategory("Category:Magnitude_10", {
         progressCallback: (progress) => {
           if (progressCallback) {
             progressCallback({
-              stage: 'Searching SNPedia',
-              progress: progress.done ? 100 : (progress.loaded / progress.total) * 100,
-              found: progress.matched
+              progress: progress.progress || 0,
+              found: progress.found || 0,
+              stage: "Fetching magnitude 10 SNPs"
             });
           }
         }
       });
+      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude10];
       
-      Logger.info(`[SNPediaManager] Found ${results.length} high magnitude SNPs`);
-      
-      // Cache results
-      this.cache.set(cacheKey, results);
-      
-      return results;
-    } catch (error) {
-      Logger.error('[SNPediaManager] Error getting high magnitude SNPs:', error);
-      
-      // Return empty array in case of error rather than throwing
-      return [];
-    }
-  },
-  
-  /**
-   * Initialize the SNPediaManager
-   */
-  init() {
-    Logger.info('[SNPediaManager] Initialized');
-  },
-  
-  /**
-   * Process a batch of SNPs and filter by criteria
-   * @param {Array} pages - Array of page objects from SNPedia API
-   * @param {Object} criteria - Criteria to filter by
-   * @returns {Array} Filtered and processed SNPs
-   */
-  processSnpBatch(pages, criteria = {}) {
-    const { genes = [], categories = [] } = criteria;
-    const results = [];
-    
-    try {
-      for (const page of pages) {
-        const title = page.title || '';
-        
-        // Skip non-SNP pages
-        if (!title.match(/^rs\d+$/i)) {
-          continue;
-        }
-        
-        // Extract content from revision
-        let content = '';
-        if (page.revisions && page.revisions.length > 0) {
-          const revision = page.revisions[0];
-          content = revision.slots?.main?.content || revision.content || '';
-        }
-        
-        // Extract magnitude if present
-        let magnitude = null;
-        const magnitudeMatch = content.match(/\{\{Magnitude\|(\d+(\.\d+)?)\}\}/i);
-        if (magnitudeMatch) {
-          magnitude = parseFloat(magnitudeMatch[1]);
-        }
-        
-        // Extract genes mentioned in the content
-        const geneMatches = content.match(/\[\[(.*?)\]\]/g) || [];
-        const mentionedGenes = geneMatches.map(match => {
-          const innerMatch = match.match(/\[\[(.*?)\]\]/);
-          return innerMatch ? innerMatch[1] : '';
-        }).filter(Boolean);
-        
-        // Check if this SNP matches our criteria
-        let matchesGenes = genes.length === 0;
-        let matchesCategories = categories.length === 0;
-        
-        if (genes.length > 0) {
-          matchesGenes = mentionedGenes.some(gene => 
-            genes.some(targetGene => gene.toLowerCase().includes(targetGene.toLowerCase()))
-          );
-        }
-        
-        if (categories.length > 0 && page.categories) {
-          const pageCategories = page.categories.map(cat => cat.title || cat['*'] || '');
-          matchesCategories = categories.some(category => 
-            pageCategories.some(pageCat => 
-              pageCat.toLowerCase().includes(category.toLowerCase())
-            )
-          );
-        }
-        
-        // If matches criteria, add to results
-        if (matchesGenes || matchesCategories) {
-          results.push({
-            rsid: title,
-            magnitude,
-            summary: this.extractSummary(content),
-            genes: mentionedGenes
-          });
-        }
+      // Next get magnitude 9, 8, and 7 SNPs
+      for (const magnitude of [9, 8, 7]) {
+        const additionalSnps = await this.getSnpsInCategory(`Category:Magnitude_${magnitude}`, {
+          progressCallback: (progress) => {
+            if (progressCallback) {
+              progressCallback({
+                progress: progress.progress || 0,
+                found: highMagnitudeSNPs.length + (progress.found || 0),
+                stage: `Fetching magnitude ${magnitude} SNPs`
+              });
+            }
+          }
+        });
+        highMagnitudeSNPs = [...highMagnitudeSNPs, ...additionalSnps];
       }
       
-      return results;
+      return highMagnitudeSNPs;
     } catch (error) {
-      Logger.error('[SNPediaManager] Error processing SNP batch:', error);
-      return [];
+      console.error("Error fetching high magnitude SNPs:", error);
+      throw error;
     }
   },
   
   /**
-   * Queue a request to the SNPedia API
-   * @param {Object} params - API parameters
-   * @param {Function} callback - Callback function for results
+   * Get all SNPs in a specific SNPedia category (e.g. Magnitude_10)
+   * @param {String} category - Category name
+   * @param {Object} options - Options
+   * @returns {Promise<Array>} Array of SNPs in that category
    */
-  queueRequest(params, callback) {
-    this.requestQueue.push({ params, callback });
+  async getSnpsInCategory(category, options = {}) {
+    const { progressCallback } = options;
     
-    if (!this.isProcessing) {
-      this.processQueue();
-    }
-  },
-  
-  /**
-   * Process the request queue with rate limiting
-   */
-  async processQueue() {
-    if (this.requestQueue.length === 0) {
-      this.isProcessing = false;
-      return;
-    }
-    
-    this.isProcessing = true;
-    const { params, callback } = this.requestQueue.shift();
-    
-    try {
-      // Add common parameters
-      const fullParams = {
-        ...params,
-        format: 'json',
-        origin: '*'
+    return new Promise((resolve, reject) => {
+      let allSNPs = [];
+      let params = {
+        action: 'query',
+        list: 'categorymembers',
+        cmtitle: category,
+        cmlimit: 500, // Maximum allowed in one request
+        cmtype: 'page', // Only get pages, not subcategories
+        cmprop: 'title|ids|sortkey',  // Get additional properties
+        formatversion: '2'
       };
       
-      // Build URL with parameters
-      const queryString = Object.entries(fullParams)
-        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-        .join('&');
+      // Process results with continuation support
+      const processResults = (error, data) => {
+        if (error) return reject(error);
+        
+        // Extract SNPs from this batch
+        if (data.query && data.query.categorymembers) {
+          // Filter to keep only rsIDs and normalize them
+          const snps = data.query.categorymembers
+            .filter(item => {
+              const title = (item.title || "").trim();
+              
+              // Keep only items that look like rsIDs (either as rs123 or just 123)
+              return (
+                title.match(/^rs\d+$/i) || // Standard format: rs123
+                title.match(/^\d+$/) // Just the number: 123
+              );
+            })
+            .map(item => {
+              // Clean and normalize the rsID
+              let rsid = (item.title || "").trim();
+              
+              // Ensure consistent format - always include rs prefix
+              if (!rsid.toLowerCase().startsWith("rs") && rsid.match(/^\d+$/)) {
+                rsid = "rs" + rsid;
+              }
+              
+              return {
+                rsid: rsid,
+                category: category.replace('Category:', ''),
+                magnitude: parseInt(category.split('_')[1]) || 0,
+                pageid: item.pageid  // Store the page ID for potential future uses
+              };
+            });
+          
+          // Log sample SNPs from this batch to help with debugging
+          if (snps.length > 0) {
+            Logger.debug(`Sample SNPs from ${category}:`, snps.slice(0, 3));
+          }
+          
+          allSNPs = [...allSNPs, ...snps];
+          
+          // Report progress
+          if (progressCallback) {
+            progressCallback({
+              found: allSNPs.length,
+              progress: data.continue ? 0.5 : 1,
+              done: !data.continue,
+              batchSize: snps.length
+            });
+          }
+          
+          // Continue if there are more results
+          if (data.continue) {
+            const nextParams = { ...params, ...data.continue };
+            this.queueRequest(nextParams, processResults);
+          } else {
+            // Done
+            Logger.info(`Found ${allSNPs.length} SNPs in category ${category}`);
+            resolve(allSNPs);
+          }
+        } else {
+          Logger.warn(`No categorymembers found in category ${category}`);
+          resolve(allSNPs);
+        }
+      };
       
-      const url = `${this.baseUrl}?${queryString}`;
-      
-      // Use proxy-aware fetch
-      const response = await ProxyManager.fetch(url);
-      const data = await response.json();
-      
-      // Call callback with results
-      callback(null, data);
-      
-    } catch (error) {
-      Logger.error('[SNPediaManager] API request failed:', error);
-      callback(error, null);
-    }
-    
-    // Process next request after delay
-    setTimeout(() => this.processQueue(), this.requestDelay);
+      // Start the first request
+      this.queueRequest(params, processResults);
+    });
   }
 };
 
