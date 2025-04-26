@@ -16,81 +16,136 @@
         <span>DNA</span>
         <h1>DNA Explorer</h1>
       </a>
+      <div id="status-indicator"></div>
     </div>
   </header>
 
-  <main class="container">
-    <div class="upload-area" id="uploadArea">
-      <h2>Upload Your DNA Data</h2>
-      <p>Upload your MyHeritage DNA ZIP file to begin analysis</p>
-      <div class="file-input-wrapper">
-        <button class="btn btn-primary">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-          </svg>
-          Select DNA File
-        </button>
-        <input type="file" id="fileInput" accept=".zip" class="file-input" />
-      </div>
-    </div>
-
-    <div id="loading">
-      <span class="spinner"></span>
-      Processing DNA data...
-    </div>
-
-    <section id="dashboard" class="dashboard section" style="display: none;"></section>
-
-    <section id="insightSection" class="section" style="display: none;">
-      <div class="section-header">
-        <h2 class="section-title">Key Insights</h2>
-      </div>
-      <div class="insights-wrapper">
-        <div id="insights"></div>
-        <div id="traits"></div>
-      </div>
-    </section>
-    
-    <div class="section" id="dataSection" style="display: none;">
-      <div class="section-header">
-        <h2 class="section-title">DNA Data Analysis</h2>
-        <button id="downloadBtn" class="btn btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-          </svg>
-          Download Report
-        </button>
+  <div class="app-container">
+    <aside id="sidebar" class="sidebar">
+      <div class="workflow-steps">
+        <div class="step active" id="step-upload">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Upload DNA</h3>
+            <p>Upload your DNA file to begin</p>
+          </div>
+        </div>
+        <div class="step" id="step-processing">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Processing</h3>
+            <p>Parsing and analyzing DNA data</p>
+          </div>
+        </div>
+        <div class="step" id="step-discovery">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Gene Discovery</h3>
+            <p>Finding relevant genes in your DNA</p>
+          </div>
+        </div>
+        <div class="step" id="step-results">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Analysis Results</h3>
+            <p>Exploring your DNA analysis</p>
+          </div>
+        </div>
       </div>
       
-      <div class="filters">
-        <input type="text" id="searchInput" placeholder="Search by rsID..." class="search-input" />
-        <select id="chromFilter">
-          <option value="">All chromosomes</option>
-        </select>
+      <div id="sidebar-summary" class="sidebar-summary">
+        <!-- Summary stats will appear here after processing -->
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div id="step-content-upload" class="step-content-panel active">
+        <div class="upload-area" id="uploadArea">
+          <h2>Upload Your DNA Data</h2>
+          <p>Upload your MyHeritage DNA ZIP file to begin automatic analysis</p>
+          <div class="file-input-wrapper">
+            <button class="btn btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+              </svg>
+              Select DNA File
+            </button>
+            <input type="file" id="fileInput" accept=".zip" class="file-input" />
+          </div>
+        </div>
       </div>
 
-      <div class="tab-container">
-        <div class="tab-bar" id="tab-bar">
-          <button class="tab-btn active" data-tab="table">All SNPs</button>
-          <button class="tab-btn" data-tab="traits">Health & Traits</button>
-          <button class="tab-btn" data-tab="genes">Gene Analysis</button>
-          <button class="tab-btn" data-tab="charts">Charts</button>
+      <div id="step-content-processing" class="step-content-panel">
+        <div id="processing-panel" class="analysis-panel">
+          <h2>Processing DNA Data</h2>
+          <div id="loading" class="analysis-progress">
+            <span class="spinner"></span>
+            <div class="progress-message">Initializing DNA analysis...</div>
+          </div>
         </div>
-        
-        <div class="tab-content">
-          <div id="table" class="tab-panel active"></div>
-          <div id="traits" class="tab-panel"></div>
-          <div id="genes" class="tab-panel">
-            <div id="geneAnalysisContent">
-              <p class="info-panel">
-                Click the "Prioritized Gene Analysis" button below to analyze your DNA data for medically relevant genes.
-                This will find SNPs associated with important genes known to have health implications.
-              </p>
+      </div>
+
+      <div id="step-content-discovery" class="step-content-panel">
+        <div id="discovery-panel" class="analysis-panel">
+          <h2>Discovering Relevant Genes</h2>
+          <div id="discovery-progress" class="analysis-progress">
+            <span class="spinner"></span>
+            <div class="progress-message">Identifying significant genes...</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="step-content-results" class="step-content-panel">
+        <div class="results-container">
+          <div class="section-tabs">
+            <button class="section-tab active" data-section="insights">Key Insights</button>
+            <button class="section-tab" data-section="genes">Gene Analysis</button>
+            <button class="section-tab" data-section="snps">SNP Data</button>
+            <button class="section-tab" data-section="charts">Charts</button>
+          </div>
+
+          <!-- Insights Section -->
+          <div id="insights-section" class="result-section active">
+            <div id="dashboard" class="dashboard-grid"></div>
+            <div class="collapsible-section open">
+              <div class="collapsible-header">
+                <h2>Key Insights</h2>
+                <button class="toggle-btn"><span class="arrow">▼</span></button>
+              </div>
+              <div class="collapsible-content">
+                <div id="insights"></div>
+              </div>
             </div>
           </div>
-          <div id="charts" class="tab-panel">
+
+          <!-- Gene Analysis Section -->
+          <div id="genes-section" class="result-section">
+            <div id="genes"></div>
+          </div>
+
+          <!-- SNP Data Section -->
+          <div id="snps-section" class="result-section">
+            <div class="filters">
+              <input type="text" id="searchInput" placeholder="Search by rsID..." class="search-input" />
+              <select id="chromFilter">
+                <option value="">All chromosomes</option>
+              </select>
+              <button id="downloadBtn" class="btn btn-outline">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                </svg>
+                Download Report
+              </button>
+            </div>
+            <div id="table"></div>
+            <div id="pagination" class="pagination"></div>
+            <div id="traits" class="traits-panel"></div>
+          </div>
+
+          <!-- Charts Section -->
+          <div id="charts-section" class="result-section">
             <div class="chart-grid">
               <div class="chart-container">
                 <h3>Distribution of Genotypes</h3>
@@ -104,14 +159,27 @@
           </div>
         </div>
       </div>
-      
-      <div id="pagination" class="pagination"></div>
+    </main>
+
+    <div id="details" class="details-panel">
+      <div class="details-header">
+        <h3>SNP Details</h3>
+        <button id="close-details" class="btn-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="details-content"></div>
     </div>
+  </div>
 
-    <div id="details" class="details-card" style="display: none;"></div>
-  </main>
-
-  <!-- Footer will be added via JavaScript for proper attribution -->
+  <footer id="status-footer" class="status-footer">
+    <div class="status-message">Ready to analyze DNA data</div>
+    <div class="action-buttons">
+      <button id="restart-btn" class="btn btn-sm btn-outline">Restart Analysis</button>
+    </div>
+  </footer>
 
   <script type="module" src="js/main.js"></script>
 </body>

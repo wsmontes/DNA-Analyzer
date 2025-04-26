@@ -1,7 +1,7 @@
 /**
- * DNA Explorer - Aplicação principal
+ * DNA Explorer - Main Application
  * 
- * Updated to support new SNPedia features with continuation
+ * Automated workflow with step-by-step guidance
  */
 
 import ProxyManager from './modules/proxyManager.js';
@@ -10,26 +10,27 @@ import UIManager from './modules/uiManager.js';
 import FileProcessor from './modules/fileProcessor.js';
 import ChartManager from './modules/chartManager.js';
 import SNPediaManager from './modules/snpediaManager.js';
+import GeneDiscovery from './modules/geneDiscovery.js';
 
-// Expor ProxyManager para facilitar o debug na console
+// Expose ProxyManager for easier debugging in console
 window.proxyManager = ProxyManager;
 
-// Inicialização quando o DOM estiver pronto
+// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('Inicializando DNA Explorer...');
+  console.log('Initializing DNA Explorer...');
 
-  // Inicializar gerenciadores
+  // Initialize managers
   UIManager.init();
   ChartManager.init();
   DataManager.init();
 
-  // Inicializar o ProxyManager em segundo plano
+  // Initialize the ProxyManager in the background
   ProxyManager.initialize();
 
-  // Adicionar atribuição do SNPedia ao rodapé
+  // Add SNPedia attribution to the footer
   addSNPediaAttribution();
   
-  // Configuração do event listener para upload de arquivo
+  // Set up event listener for file upload with automated workflow
   const fileInput = document.getElementById('fileInput');
   
   fileInput.addEventListener('change', async (event) => {
@@ -37,249 +38,96 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!file) return;
     
     try {
-      // Resetar UI e mostrar carregamento
+      // Reset UI before starting
       UIManager.resetUI();
-      UIManager.showLoading('Processando arquivo...');
       
-      // Processar o arquivo DNA
+      // Step 1: Move to processing step
+      UIManager.goToStep('processing');
+      
+      // Step 2: Process DNA file
+      UIManager.showLoading('Reading DNA file...');
       const dnaData = await FileProcessor.processDnaFile(file);
       
-      // Garantir que temos um proxy funcionando
-      UIManager.showLoading('Inicializando conexões...');
+      // Update status with initial counts
+      UIManager.updateStatusMessage(`Processed ${dnaData.length.toLocaleString()} SNPs`);
+      
+      // Initialize connection to external APIs
+      UIManager.updateProgress({ 
+        loaded: 0,
+        total: 3,
+        stage: 'Establishing API connections...'
+      });
+      
       const proxyReady = await ProxyManager.initialize();
       if (!proxyReady) {
-        alert("Não foi possível estabelecer conexão com APIs externas. Algumas funcionalidades podem ser limitadas.");
+        UIManager.updateStatusMessage('Warning: Limited API connectivity');
+      } else {
+        UIManager.updateStatusMessage('API connections established');
       }
       
-      // Analisar dados para obter insights
-      UIManager.showLoading('Analisando amostra de SNPs...');
+      // Step 3: Initial analysis of sample SNPs
+      UIManager.updateProgress({ 
+        loaded: 1,
+        total: 3,
+        stage: 'Analyzing sample SNPs...'
+      });
+      
       const analysisResults = await FileProcessor.analyzeDnaData(dnaData);
       
-      // Atualizar a UI com os resultados
-      UIManager.updateUI(analysisResults);
+      // Step 4: Generate charts
+      UIManager.updateProgress({ 
+        loaded: 2,
+        total: 3,
+        stage: 'Generating visualization...'
+      });
       
-      // Criar gráficos
+      // Create charts (will be displayed when that section is viewed)
       const genoChartCanvas = document.getElementById('genoChart');
       ChartManager.createGenotypeChart(genoChartCanvas, dnaData);
       
       const chromChartCanvas = document.getElementById('chromChart');
       ChartManager.createChromosomeDistributionChart(chromChartCanvas, dnaData);
       
+      // Step 5: Move to gene discovery step automatically
+      UIManager.goToStep('discovery');
+      
+      // Step 6: Run gene discovery
+      // Initialize the gene discovery module with user data
+      GeneDiscovery.init(dnaData);
+      
+      // Discover relevant genes with progress reporting
+      const geneResults = await GeneDiscovery.discoverRelevantGenes(progress => {
+        UIManager.updateDiscoveryProgress(progress);
+      });
+      
+      // Step 7: Store gene results and update the UI
+      DataManager.geneDiscoveryResults = geneResults;
+      
+      // Step 8: Move to results step and show the processed data
+      UIManager.goToStep('results');
+      UIManager.updateUI(analysisResults);
+      
+      // Display gene results in the appropriate section
+      UIManager.displayGeneResults(geneResults);
+      
+      // Show success message
+      UIManager.updateStatusMessage('Analysis complete - Explore your results');
+      
     } catch (error) {
-      console.error("Erro ao processar DNA:", error);
+      console.error("Error processing DNA:", error);
       UIManager.showError(error.message);
-    } finally {
-      UIManager.hideLoading();
     }
   });
 
-  // Adicionar função para buscar detalhes de um SNP
+  // Add click handler for SNP links
   window.fetchDetails = async (rsid) => {
     await UIManager.fetchDetails(rsid);
   };
   
-  console.log('DNA Explorer inicializado com sucesso!');
-
-  // Add UI element for comprehensive SNPedia analysis
-  const dataSection = document.getElementById('dataSection');
-  if (dataSection) {
-    const btnContainer = document.createElement('div');
-    btnContainer.className = 'action-buttons';
-    btnContainer.style.marginTop = '20px';
-    btnContainer.style.textAlign = 'center';
-    
-    const snpediaBtn = document.createElement('button');
-    snpediaBtn.className = 'btn btn-primary';
-    snpediaBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-        <path d="M13.5 3a.5.5 0 0 1 .5.5V11H2V3.5a.5.5 0 0 1 .5-.5h11zm-11-1A1.5 1.5 0 0 0 1 3.5v10A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-10A1.5 1.5 0 0 0 13.5 2h-11zM0 12.5h16a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5z"/>
-      </svg>
-      Comprehensive SNPedia Analysis
-    `;
-    
-    snpediaBtn.addEventListener('click', async () => {
-      UIManager.showLoading('Starting comprehensive SNPedia analysis...');
-      
-      try {
-        // Get all SNPs from SNPedia that match user data
-        await DataManager.getRelevantSnpediaSNPs(progress => {
-          UIManager.updateProgress(progress);
-        });
-        
-        // Display results in a new section
-        createSnpediaResultsSection();
-        
-      } catch (error) {
-        console.error("Error during comprehensive SNPedia analysis:", error);
-        UIManager.showError("Failed to complete SNPedia analysis: " + error.message);
-      } finally {
-        UIManager.hideLoading();
-      }
-    });
-    
-    btnContainer.appendChild(snpediaBtn);
-    dataSection.appendChild(btnContainer);
-  }
-
-  function createSnpediaResultsSection() {
-    const container = document.querySelector('main.container');
-    
-    // Create new section for SNPedia results
-    const section = document.createElement('section');
-    section.id = 'snpediaResultsSection';
-    section.className = 'section';
-    
-    section.innerHTML = `
-      <div class="section-header">
-        <h2 class="section-title">SNPedia Analysis Results</h2>
-        <div>
-          <span style="font-size:0.8em;color:var(--gray)">
-            Data from SNPedia under <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">CC BY-NC-SA 3.0 US</a>
-          </span>
-        </div>
-      </div>
-      <div id="snpediaResults">
-        <p>Detailed SNPedia analysis complete. Results will be displayed here.</p>
-      </div>
-    `;
-    
-    // Insert before the details section
-    const detailsEl = document.getElementById('details');
-    container.insertBefore(section, detailsEl);
-  }
-
-  // Add Gene Analysis button to the UI
-  function addGeneAnalysisButton() {
-    const dataSection = document.getElementById('dataSection');
-    if (!dataSection) return;
-    
-    // Create container for gene analysis section
-    const geneAnalysisSection = document.createElement('section');
-    geneAnalysisSection.id = 'geneAnalysisSection';
-    geneAnalysisSection.className = 'section';
-    geneAnalysisSection.style.display = 'none';
-    document.querySelector('main.container').insertBefore(geneAnalysisSection, document.getElementById('details'));
-    
-    // Store reference in the UI manager
-    UIManager.elements.geneAnalysisEl = geneAnalysisSection;
-    
-    // Add button to data section
-    const btnContainer = document.createElement('div');
-    btnContainer.className = 'action-buttons';
-    btnContainer.style.marginTop = '20px';
-    btnContainer.style.textAlign = 'center';
-    
-    const geneAnalysisBtn = document.createElement('button');
-    geneAnalysisBtn.className = 'btn btn-primary';
-    geneAnalysisBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-        <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
-      </svg>
-      Prioritized Gene Analysis
-    `;
-    
-    geneAnalysisBtn.addEventListener('click', async () => {
-      UIManager.showLoading('Starting gene prioritization analysis...');
-      
-      try {
-        // Run gene prioritization analysis
-        const prioritizedData = await DataManager.getPrioritizedGeneSNPs(progress => {
-          UIManager.updateProgress(progress);
-        });
-        
-        // Display the results
-        UIManager.displayPrioritizedGeneAnalysis(prioritizedData);
-        
-        // Scroll to the results
-        document.getElementById('geneAnalysisSection').scrollIntoView({ behavior: 'smooth' });
-        
-      } catch (error) {
-        console.error("Error in gene prioritization:", error);
-        UIManager.showError("Failed to complete gene prioritization: " + error.message);
-      } finally {
-        UIManager.hideLoading();
-      }
-    });
-    
-    btnContainer.appendChild(geneAnalysisBtn);
-    dataSection.appendChild(btnContainer);
-  }
-
-  // Call this during initialization after the UI is setup
-  addGeneAnalysisButton();
-
-  /**
-   * Add gene discovery feature to the UI
-   */
-  function addGeneDiscoveryFeature() {
-    // Add button to data section
-    const dataSection = document.getElementById('dataSection');
-    if (!dataSection) return;
-    
-    const btnContainer = document.createElement('div');
-    btnContainer.className = 'action-buttons';
-    btnContainer.style.marginTop = '20px';
-    btnContainer.style.textAlign = 'center';
-    
-    const geneDiscoveryBtn = document.createElement('button');
-    geneDiscoveryBtn.id = 'geneDiscoveryBtn';
-    geneDiscoveryBtn.className = 'btn btn-primary';
-    geneDiscoveryBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-        <path d="M11.998 8H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5ZM5.071 6h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5Zm-1 5h8.973a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H4.071a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5Z"/>
-        <path d="M9.45 8.475 8.657 9.95l.765.126-.5.19-.593-.09-.405.682-.31-.567-.58.074-.116-.434.546-.082L6.56 9.115l.483-.208 1.37.77L9.25 8.163l.201.312Z"/>
-      </svg>
-      Discover Relevant Genes
-    `;
-    
-    geneDiscoveryBtn.addEventListener('click', async () => {
-      // Disable button while running discovery
-      geneDiscoveryBtn.disabled = true;
-      geneDiscoveryBtn.innerHTML = `
-        <span class="spinner"></span>
-        Analyzing...
-      `;
-      
-      try {
-        // Run gene discovery
-        await UIManager.runGeneDiscovery();
-        
-        // Show gene analysis tab
-        const geneTab = document.querySelector('.tab-btn[data-tab="genes"]');
-        if (geneTab) {
-          geneTab.click();
-        }
-      } catch (error) {
-        console.error("Gene discovery failed:", error);
-        alert(`Gene discovery failed: ${error.message}`);
-      } finally {
-        // Re-enable button
-        geneDiscoveryBtn.disabled = false;
-        geneDiscoveryBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M11.998 8H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5ZM5.071 6h6.927a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H5.071a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5Zm-1 5h8.973a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H4.071a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5Z"/>
-            <path d="M9.45 8.475 8.657 9.95l.765.126-.5.19-.593-.09-.405.682-.31-.567-.58.074-.116-.434.546-.082L6.56 9.115l.483-.208 1.37.77L9.25 8.163l.201.312Z"/>
-          </svg>
-          Discover Relevant Genes
-        `;
-      }
-    });
-    
-    btnContainer.appendChild(geneDiscoveryBtn);
-    dataSection.appendChild(btnContainer);
-    
-    // Expose the function globally for button access
-    window.runGeneDiscovery = async () => {
-      await UIManager.runGeneDiscovery();
-    };
-  }
-
-  // Add gene discovery feature after initializing other components
-  addGeneDiscoveryFeature();
+  console.log('DNA Explorer successfully initialized!');
 });
 
-// Função para adicionar atribuição do SNPedia
+// Function to add SNPedia attribution
 function addSNPediaAttribution() {
   const footer = document.createElement('footer');
   footer.className = 'attribution-footer';

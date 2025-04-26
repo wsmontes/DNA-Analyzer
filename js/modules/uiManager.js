@@ -1,667 +1,469 @@
 /**
  * UIManager
  * 
- * Add progress bar handling for continued API queries
+ * Enhanced with automated workflow and better progress indicators
  */
 import DataManager from './dataManager.js';
 
 const UIManager = {
-  elements: {}, // Armazenar referências a elementos DOM
+  elements: {}, // Store DOM element references
   tableEl: null,
-
-  // Inicializar referências aos elementos DOM
+  currentStep: 'upload',
+  
+  // Initialize DOM element references
   init() {
     this.elements = {
+      // Step elements
+      stepElements: {
+        upload: document.getElementById('step-upload'),
+        processing: document.getElementById('step-processing'),
+        discovery: document.getElementById('step-discovery'),
+        results: document.getElementById('step-results')
+      },
+      stepContents: {
+        upload: document.getElementById('step-content-upload'),
+        processing: document.getElementById('step-content-processing'),
+        discovery: document.getElementById('step-content-discovery'),
+        results: document.getElementById('step-content-results')
+      },
+      
+      // Core elements
+      sidebar: document.getElementById('sidebar'),
+      sidebarSummary: document.getElementById('sidebar-summary'),
+      statusIndicator: document.getElementById('status-indicator'),
+      statusFooter: document.getElementById('status-footer'),
+      statusMessage: document.querySelector('.status-message'),
+      
+      // Processing elements
       loading: document.getElementById('loading'),
+      discoveryProgress: document.getElementById('discovery-progress'),
+      
+      // Results elements
+      dashboardEl: document.getElementById('dashboard'),
+      insightsEl: document.getElementById('insights'),
       tableContainer: document.getElementById('table'),
       paginationEl: document.getElementById('pagination'),
       detailsEl: document.getElementById('details'),
+      detailsContent: document.querySelector('.details-content'),
       searchInput: document.getElementById('searchInput'),
       chromFilter: document.getElementById('chromFilter'),
       downloadBtn: document.getElementById('downloadBtn'),
-      dashboardEl: document.getElementById('dashboard'),
-      insightsEl: document.getElementById('insights'),
-      insightSection: document.getElementById('insightSection'),
-      dataSection: document.getElementById('dataSection'),
       traitsEl: document.getElementById('traits'),
+      genesEl: document.getElementById('genes'),
       uploadArea: document.getElementById('uploadArea'),
       fileInput: document.getElementById('fileInput')
     };
 
-    // Configurar tabs
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanels = document.querySelectorAll('.tab-panel');
-
-    tabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        tabBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+    // Setup tab functionality for results
+    const sectionTabs = document.querySelectorAll('.section-tab');
+    const resultSections = document.querySelectorAll('.result-section');
+    
+    sectionTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        sectionTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
         
-        tabPanels.forEach(panel => panel.classList.remove('active'));
-        document.getElementById(btn.dataset.tab).classList.add('active');
+        const sectionId = tab.dataset.section + '-section';
+        resultSections.forEach(section => {
+          section.classList.toggle('active', section.id === sectionId);
+        });
+      });
+    });
+    
+    // Setup collapsible sections
+    document.querySelectorAll('.collapsible-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const section = header.closest('.collapsible-section');
+        section.classList.toggle('open');
       });
     });
 
-    // Configurar área de upload (drag & drop)
-    this.elements.uploadArea.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      this.elements.uploadArea.classList.add('dragover');
+    // Close details panel
+    document.getElementById('close-details')?.addEventListener('click', () => {
+      this.hideDetails();
     });
-    
-    this.elements.uploadArea.addEventListener('dragleave', () => {
-      this.elements.uploadArea.classList.remove('dragover');
-    });
-    
-    this.elements.uploadArea.addEventListener('drop', (e) => {
-      e.preventDefault();
-      this.elements.uploadArea.classList.remove('dragover');
-      
-      if (e.dataTransfer.files.length) {
-        this.elements.fileInput.files = e.dataTransfer.files;
-        // Disparar o evento change manualmente
-        const event = new Event('change');
-        this.elements.fileInput.dispatchEvent(event);
+
+    // Restart button
+    document.getElementById('restart-btn')?.addEventListener('click', () => {
+      if (confirm('Are you sure you want to restart analysis? All current results will be lost.')) {
+        window.location.reload();
       }
     });
 
-    // Adicionar event listeners
-    this.elements.searchInput.addEventListener('input', () => this.handleFilterChange());
-    this.elements.chromFilter.addEventListener('change', () => this.handleFilterChange());
-    this.elements.downloadBtn.addEventListener('click', () => this.downloadReport());
+    // Setup drag & drop for upload area
+    this.setupDragAndDrop();
+
+    // Setup event listeners
+    this.elements.searchInput?.addEventListener('input', () => this.handleFilterChange());
+    this.elements.chromFilter?.addEventListener('change', () => this.handleFilterChange());
+    this.elements.downloadBtn?.addEventListener('click', () => this.downloadReport());
+  },
+  
+  // Setup drag and drop functionality
+  setupDragAndDrop() {
+    const uploadArea = this.elements.uploadArea;
+    const fileInput = this.elements.fileInput;
+    
+    if (!uploadArea || !fileInput) return;
+    
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      
+      if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        // Trigger change event manually
+        const event = new Event('change');
+        fileInput.dispatchEvent(event);
+      }
+    });
   },
 
-  // Mostrar indicador de carregamento
-  showLoading(message = 'Processando dados de DNA...') {
+  // Show loading indicator with message
+  showLoading(message = 'Processing DNA data...') {
+    if (!this.elements.loading) return;
+    
     this.elements.loading.style.display = 'block';
-    this.elements.loading.innerHTML = `<span class="spinner"></span> ${message}`;
+    this.elements.loading.innerHTML = `<span class="spinner"></span> <div class="progress-message">${message}</div>`;
   },
-
-  // Update loading with progress
+  
+  // Update progress with detailed information
   updateProgress(progress) {
     if (!this.elements.loading) return;
     
-    let progressText = '';
+    let progressHtml = '';
     if (progress && typeof progress === 'object') {
-      const { loaded, total, done } = progress;
+      const { loaded, total, stage } = progress;
       
-      if (loaded !== undefined && total !== undefined) {
+      if (loaded !== undefined) {
+        let statusText = stage || 'Processing...';
+        
         if (typeof total === 'number') {
           // We know the total
           const percentage = Math.round((loaded / total) * 100);
-          progressText = `<div class="progress-bar"><div style="width:${percentage}%"></div></div>
-                          <div class="progress-text">${loaded} of ${total} (${percentage}%)</div>`;
+          progressHtml = `
+            <div class="progress-bar">
+              <div style="width:${percentage}%"></div>
+            </div>
+            <div class="progress-text">${stage || 'Processing'}: ${loaded} of ${total} (${percentage}%)</div>
+          `;
+          statusText = `${stage || 'Processing'}: ${percentage}% complete`;
         } else {
-          // We don't know the exact total (e.g., when using continuation)
-          progressText = `<div class="progress-bar indeterminate">
-                            <div class="progress-track"></div>
-                          </div>
-                          <div class="progress-text">${loaded} items loaded</div>`;
+          // We don't know the exact total
+          progressHtml = `
+            <div class="progress-bar indeterminate">
+              <div class="progress-track"></div>
+            </div>
+            <div class="progress-text">${stage || 'Processing'}: ${loaded} items</div>
+          `;
+          statusText = `${stage || 'Processing'}: ${loaded} items`;
         }
+        
+        // Update status in footer and header
+        this.updateStatusMessage(statusText);
       }
     }
     
-    if (progressText) {
-      this.elements.loading.innerHTML += progressText;
+    if (progressHtml) {
+      const progressContainer = document.createElement('div');
+      progressContainer.className = 'progress-container';
+      progressContainer.innerHTML = progressHtml;
+      
+      // Replace existing progress if any, otherwise append
+      const existingProgress = this.elements.loading.querySelector('.progress-container');
+      if (existingProgress) {
+        this.elements.loading.replaceChild(progressContainer, existingProgress);
+      } else {
+        this.elements.loading.appendChild(progressContainer);
+      }
+    }
+  },
+  
+  // Update discovery progress
+  updateDiscoveryProgress(progress) {
+    const progressEl = this.elements.discoveryProgress;
+    if (!progressEl) return;
+    
+    let progressHtml = '';
+    if (progress) {
+      const percentage = Math.round((progress.progress || 0) * 100);
+      
+      progressHtml = `
+        <div class="progress-bar">
+          <div style="width:${percentage}%"></div>
+        </div>
+        <div class="progress-text">${progress.stage || 'Discovering genes...'}</div>
+      `;
+      
+      if (progress.findings) {
+        progressHtml += `<div class="progress-findings">${progress.findings} significant matches found</div>`;
+      }
+      
+      // Update status message
+      this.updateStatusMessage(`Gene discovery: ${percentage}% complete`);
+    }
+    
+    if (progressHtml) {
+      const progressContainer = document.createElement('div');
+      progressContainer.className = 'progress-container';
+      progressContainer.innerHTML = progressHtml;
+      
+      // Replace existing progress if any, otherwise append
+      const existingProgress = progressEl.querySelector('.progress-container');
+      if (existingProgress) {
+        progressEl.replaceChild(progressContainer, existingProgress);
+      } else {
+        progressEl.appendChild(progressContainer);
+      }
+    }
+  },
+  
+  // Hide loading indicator
+  hideLoading() {
+    if (this.elements.loading) {
+      this.elements.loading.style.display = 'none';
+    }
+  },
+  
+  // Move to the next step in the workflow
+  goToStep(step) {
+    // Update step indicators in sidebar
+    Object.keys(this.elements.stepElements).forEach(key => {
+      const element = this.elements.stepElements[key];
+      if (!element) return;
+      
+      if (key === step) {
+        element.classList.add('active');
+        element.classList.remove('completed');
+      } else if (this.getStepIndex(key) < this.getStepIndex(step)) {
+        element.classList.remove('active');
+        element.classList.add('completed');
+      } else {
+        element.classList.remove('active', 'completed');
+      }
+    });
+    
+    // Show correct step content
+    Object.keys(this.elements.stepContents).forEach(key => {
+      const content = this.elements.stepContents[key];
+      if (!content) return;
+      content.classList.toggle('active', key === step);
+    });
+    
+    this.currentStep = step;
+    
+    // Update status message
+    this.updateStatusMessage(this.getStatusForStep(step));
+  },
+  
+  // Get index of step (for comparison)
+  getStepIndex(step) {
+    const steps = ['upload', 'processing', 'discovery', 'results'];
+    return steps.indexOf(step);
+  },
+  
+  // Get status message for current step
+  getStatusForStep(step) {
+    switch(step) {
+      case 'upload': return 'Ready to upload DNA file';
+      case 'processing': return 'Processing DNA data';
+      case 'discovery': return 'Discovering relevant genes';
+      case 'results': return 'Analysis complete';
+      default: return 'DNA Explorer';
+    }
+  },
+  
+  // Update status message in header and footer
+  updateStatusMessage(message) {
+    if (this.elements.statusIndicator) {
+      this.elements.statusIndicator.textContent = message;
+    }
+    
+    if (this.elements.statusMessage) {
+      this.elements.statusMessage.textContent = message;
     }
   },
 
-  hideLoading() {
-    this.elements.loading.style.display = 'none';
-  },
-
-  // Redefinir UI para o estado inicial
+  // Reset UI to initial state
   resetUI() {
-    this.elements.dashboardEl.innerHTML = '';
-    this.elements.dashboardEl.style.display = 'none';
-    this.elements.insightsEl.innerHTML = '';
-    this.elements.insightSection.style.display = 'none';
-    this.elements.dataSection.style.display = 'none';
-    document.getElementById('summary')?.remove();
-    this.elements.tableContainer.innerHTML = '';
-    this.elements.paginationEl.innerHTML = '';
-    document.getElementById('charts').innerHTML = '<canvas id="genoChart" width="600" height="300"></canvas>';
-    this.elements.detailsEl.innerHTML = '';
-    this.elements.detailsEl.style.display = 'none';
-    this.elements.searchInput.value = '';
-    this.elements.chromFilter.value = '';
-    this.elements.chromFilter.innerHTML = '<option value="">All chromosomes</option>';
-    this.elements.traitsEl.innerHTML = '';
+    // Reset core elements
+    if (this.elements.dashboardEl) this.elements.dashboardEl.innerHTML = '';
+    if (this.elements.insightsEl) this.elements.insightsEl.innerHTML = '';
+    if (this.elements.tableContainer) this.elements.tableContainer.innerHTML = '';
+    if (this.elements.paginationEl) this.elements.paginationEl.innerHTML = '';
+    if (this.elements.detailsContent) this.elements.detailsContent.innerHTML = '';
+    if (this.elements.traitsEl) this.elements.traitsEl.innerHTML = '';
+    if (this.elements.genesEl) this.elements.genesEl.innerHTML = '';
+    
+    // Reset sidebar summary
+    if (this.elements.sidebarSummary) this.elements.sidebarSummary.innerHTML = '';
+    
+    // Reset form elements
+    if (this.elements.searchInput) this.elements.searchInput.value = '';
+    if (this.elements.chromFilter) {
+      this.elements.chromFilter.value = '';
+      this.elements.chromFilter.innerHTML = '<option value="">All chromosomes</option>';
+    }
+    
+    // Go back to first step
+    this.goToStep('upload');
+    
+    // Ensure details panel is closed
+    this.hideDetails();
   },
 
-  // Atualizar UI com resultados da análise
+  // Update UI after analysis
   updateUI(data) {
     const { allResults, clinCounts, traitCounts, ancestryHints, clinSummary, traitSummary, topInsights } = data;
     
-    // Mostrar dashboard e seções
-    this.elements.dashboardEl.style.display = 'block';
-    this.elements.insightSection.style.display = 'block';
-    this.elements.dataSection.style.display = 'block';
-
-    // Dashboard
-    this.elements.dashboardEl.innerHTML = `
-      <div class="dashboard-card">
-        <div class="number">${allResults.length.toLocaleString()}</div>
-        <div class="label">Total SNPs</div>
-      </div>
-      <div class="dashboard-card">
-        <div class="number">${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</div>
-        <div class="label">Potencialmente Patogênico</div>
-      </div>
-      <div class="dashboard-card">
-        <div class="number">${Object.keys(traitCounts).length}</div>
-        <div class="label">Traços/Fenótipos</div>
-      </div>
-      <div class="dashboard-card">
-        <div class="number">${ancestryHints}</div>
-        <div class="label">Marcadores de Ancestralidade</div>
-      </div>
-    `;
-
-    // Insights
-    this.elements.insightsEl.innerHTML = `
-      <h3>Principais Insights</h3>
-      ${topInsights.length ? topInsights.map(i=>`<div class="insight-item">${i}</div>`).join('') : '<div class="insight-item">Nenhuma descoberta de alta prioridade nos primeiros 50 SNPs.</div>'}
-      <div style="margin-top:10px;font-size:0.9em;color:var(--gray);">(Clique em um SNP na tabela para mais detalhes. Apenas os primeiros 50 SNPs são analisados profundamente para velocidade.)</div>
-    `;
-
-    // Aba de Traços/Saúde
-    let traitHtml = '';
-    if (traitSummary.length) {
-      traitHtml += `<h3>Saúde & Traços</h3>`;
-      traitHtml += `<table><thead><tr><th>rsID</th><th>Gene</th><th>Traços</th><th>Fenótipos</th></tr></thead><tbody>`;
-      for (const t of traitSummary) {
-        traitHtml += `<tr>
-          <td><span class="snp-link" data-rsid="${t.rsid}">${t.rsid}</span></td>
-          <td>${t.gene}</td>
-          <td>${t.traits.map(tr=>`<span class="trait-keyword">${tr}</span>`).join('')}</td>
-          <td>${t.phenotypes.map(p=>p.description).join('; ')}</td>
-        </tr>`;
-      }
-      traitHtml += `</tbody></table>`;
-    } else {
-      traitHtml = `<div>Nenhuma associação de traço/fenótipo encontrada nos primeiros 50 SNPs.</div>`;
+    // Create dashboard summary
+    if (this.elements.dashboardEl) {
+      this.elements.dashboardEl.innerHTML = `
+        <div class="dashboard-card">
+          <div class="number">${allResults.length.toLocaleString()}</div>
+          <div class="label">Total SNPs</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="number">${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</div>
+          <div class="label">Potentially Pathogenic</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="number">${Object.keys(traitCounts).length}</div>
+          <div class="label">Traits/Phenotypes</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="number">${ancestryHints}</div>
+          <div class="label">Ancestry Markers</div>
+        </div>
+      `;
     }
-    this.elements.traitsEl.innerHTML = traitHtml;
+    
+    // Update sidebar summary
+    if (this.elements.sidebarSummary) {
+      this.elements.sidebarSummary.innerHTML = `
+        <h3>Analysis Summary</h3>
+        <div class="summary-stats">
+          <p><strong>${allResults.length.toLocaleString()}</strong> SNPs analyzed</p>
+          <p><strong>${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</strong> potentially pathogenic variants</p>
+          <p><strong>${Object.keys(traitCounts).length}</strong> traits/phenotypes identified</p>
+        </div>
+      `;
+    }
 
-    // Configurar tabela e filtros de cromossomo
+    // Create insights
+    if (this.elements.insightsEl) {
+      this.elements.insightsEl.innerHTML = `
+        <div class="insights-container">
+          ${topInsights.length ? 
+            topInsights.map(i => `<div class="insight-item">${i}</div>`).join('') : 
+            '<div class="insight-item">No high priority findings in the first 50 SNPs.</div>'}
+          <div class="info-note">
+            (Click on any SNP in the table for detailed information)
+          </div>
+        </div>
+      `;
+    }
+
+    // Create traits panel
+    if (this.elements.traitsEl) {
+      let traitHtml = '';
+      if (traitSummary.length) {
+        traitHtml += `<h3>Health & Traits</h3>`;
+        traitHtml += `<table>
+          <thead>
+            <tr>
+              <th>rsID</th>
+              <th>Gene</th>
+              <th>Traits</th>
+              <th>Phenotypes</th>
+            </tr>
+          </thead>
+          <tbody>`;
+        
+        for (const t of traitSummary) {
+          traitHtml += `
+            <tr>
+              <td><span class="snp-link" data-rsid="${t.rsid}">${t.rsid}</span></td>
+              <td>${t.gene}</td>
+              <td>${t.traits.map(tr => `<span class="trait-keyword">${tr}</span>`).join('')}</td>
+              <td>${t.phenotypes.map(p => p.description).join('; ')}</td>
+            </tr>`;
+        }
+        
+        traitHtml += `</tbody></table>`;
+      } else {
+        traitHtml = `<div class="info-note">No trait/phenotype associations found in the first 50 SNPs.</div>`;
+      }
+      
+      this.elements.traitsEl.innerHTML = traitHtml;
+    }
+
+    // Setup table and filters
     this.setupTable();
     this.setupChromosomeFilter(allResults);
     this.renderTablePage();
     this.setupPagination();
 
-    // Adicionar listeners para links de SNP
+    // Add listeners for SNP links
     document.querySelectorAll('.snp-link').forEach(link => {
       link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid || link.textContent));
     });
   },
 
-  // Configurar tabela principal
-  setupTable() {
-    this.tableEl = document.createElement('table');
-    this.tableEl.innerHTML = `<thead><tr><th>rsID</th><th>Cromossomo</th><th>Posição</th><th>Genótipo</th></tr></thead><tbody></tbody>`;
-    this.elements.tableContainer.innerHTML = '';
-    this.elements.tableContainer.append(this.tableEl);
-  },
-
-  // Configurar filtro de cromossomos
-  setupChromosomeFilter(results) {
-    const chroms = [...new Set(results.map(r => r.chromosome))].sort((a, b) => {
-      const na = parseInt(a); const nb = parseInt(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      if (!isNaN(na)) return -1; if (!isNaN(nb)) return 1;
-      return a.localeCompare(b);
-    });
+  // Display gene discovery results
+  displayGeneResults(results) {
+    if (!results || !this.elements.genesEl) return;
     
-    this.elements.chromFilter.innerHTML = '<option value="">Todos os cromossomos</option>';
-    chroms.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c; opt.textContent = `Cromossomo ${c}`;
-      this.elements.chromFilter.append(opt);
-    });
-  },
-
-  // Renderizar página da tabela
-  renderTablePage() {
-    if (!this.tableEl) return;
+    const { geneGroups, stats } = results;
     
-    const start = (DataManager.currentPage - 1) * DataManager.rowsPerPage;
-    const end = start + DataManager.rowsPerPage;
-    const pageData = DataManager.filteredResults.slice(start, end);
-
-    const tbody = this.tableEl.querySelector('tbody');
-    tbody.innerHTML = pageData.map(r => `
-      <tr data-rsid="${r.rsid}" style="cursor:pointer;">
-        <td><span class="snp-link" data-rsid="${r.rsid}">${r.rsid}</span></td>
-        <td>${r.chromosome}</td>
-        <td>${r.position}</td>
-        <td>${r.Genotype}</td>
-      </tr>`).join('');
-
-    // Adicionar listeners de clique às novas linhas (para acessibilidade por teclado)
-    tbody.querySelectorAll('tr[data-rsid]').forEach(row => {
-      row.addEventListener('click', (e) => {
-        // Não disparar se clicaram diretamente no link
-        if (!e.target.classList.contains('snp-link')) {
-          this.fetchDetails(row.dataset.rsid);
-        }
-      });
-    });
-
-    tbody.querySelectorAll('.snp-link').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.fetchDetails(link.dataset.rsid);
-      });
-    });
-  },
-
-  // Configurar paginação
-  setupPagination() {
-    this.elements.paginationEl.innerHTML = '';
-    const totalPages = Math.ceil(DataManager.filteredResults.length / DataManager.rowsPerPage);
-
-    if (totalPages <= 1) return;
-
-    const prevButton = document.createElement('button');
-    prevButton.textContent = 'Anterior';
-    prevButton.disabled = DataManager.currentPage === 1;
-    prevButton.addEventListener('click', () => {
-      if (DataManager.currentPage > 1) {
-        DataManager.currentPage--;
-        this.renderTablePage();
-        this.setupPagination();
-      }
-    });
-    this.elements.paginationEl.appendChild(prevButton);
-
-    const pageInfo = document.createElement('span');
-    pageInfo.textContent = ` Página ${DataManager.currentPage} de ${totalPages} `;
-    pageInfo.style.margin = '0 10px';
-    this.elements.paginationEl.appendChild(pageInfo);
-
-    const nextButton = document.createElement('button');
-    nextButton.textContent = 'Próximo';
-    nextButton.disabled = DataManager.currentPage === totalPages;
-    nextButton.addEventListener('click', () => {
-      if (DataManager.currentPage < totalPages) {
-        DataManager.currentPage++;
-        this.renderTablePage();
-        this.setupPagination();
-      }
-    });
-    this.elements.paginationEl.appendChild(nextButton);
-  },
-
-  // Lidar com alteração no filtro
-  handleFilterChange() {
-    const searchQuery = this.elements.searchInput.value;
-    const chromosomeFilter = this.elements.chromFilter.value;
-    
-    DataManager.filterResults(searchQuery, chromosomeFilter);
-    this.renderTablePage();
-    this.setupPagination();
-  },
-
-  // Baixar relatório
-  downloadReport() {
-    if (DataManager.allResults.length === 0) {
-      alert("Nenhum dado carregado para download.");
-      return;
-    }
-    const dataToDownload = DataManager.allResults;
-    const blob = new Blob([JSON.stringify(dataToDownload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'dna_report.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  },
-
-  // Buscar e exibir detalhes de um SNP
-  async fetchDetails(rsid) {
-    if (!rsid) return;
-    
-    this.elements.detailsEl.style.display = 'block';
-    this.elements.detailsEl.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span class="spinner"></span>
-        <p>Carregando detalhes para ${rsid}...</p>
-      </div>
-    `;
-    
-    // Rolar para os detalhes
-    this.elements.detailsEl.scrollIntoView({behavior: 'smooth'});
-    
-    let ensemblInfo = {};
-    let popFreq = {};
-    let snpediaSummary = 'Não foi possível buscar o resumo do SNPedia.';
-    let errorMessages = [];
-
-    try {
-      // Usar dataManager para buscar os dados
-      ensemblInfo = await DataManager.fetchSnp(rsid);
-    } catch (err) {
-      errorMessages.push(`Falha ao buscar dados de variação do Ensembl: ${err.message}`);
-    }
-
-    // Buscar frequências populacionais
-    if (ensemblInfo.name) {
-      try {
-        const pfData = await DataManager.fetchPopulationFrequencies(rsid);
-        if (pfData && pfData.length > 0) {
-          popFreq = pfData.reduce((acc, p) => {
-            acc[p.population] = p.frequency !== undefined ? p.frequency.toFixed(4) : 'N/A';
-            return acc;
-          }, {});
-        } else {
-          popFreq = { 'Info': 'Nenhum dado populacional disponível.' };
-        }
-      } catch (err) {
-        errorMessages.push(`Falha ao buscar frequências populacionais: ${err.message}`);
-        popFreq = { 'Erro': 'Não foi possível carregar os dados.' };
-      }
-    } else {
-      popFreq = { 'Info': 'Ignorado devido a erro na busca de variação.' };
-    }
-
-    // Buscar informações do SNPedia (agora usando a API correta)
-    try {
-      snpediaSummary = await DataManager.fetchSnpediaSummary(rsid);
-    } catch (err) {
-      errorMessages.push(`Falha ao buscar resumo do SNPedia: ${err.message}`);
-    }
-
-    // --- Exibir resultados ---
-    const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'nenhuma';
-    const popFreqHtml = Object.entries(popFreq).length > 0 
-      ? Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('') 
-      : '<li>Nenhum dado populacional disponível</li>';
-    const phenotypesHtml = (ensemblInfo.phenotypes || []).length > 0
-      ? (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('')
-      : '<li>Nenhum dado de fenótipo disponível</li>';
-
-    // Exibir qual proxy está sendo usado (se houver)
-    let proxyInfo = '<span style="font-size:0.9em;color:var(--gray)">Status do proxy: Não inicializado</span>';
-    if (window.proxyManager && window.proxyManager.isInitialized && window.proxyManager.currentProxy) {
-      proxyInfo = window.proxyManager.currentProxy.url
-        ? `<span style="font-size:0.9em;color:var(--gray)">Usando: proxy ${window.proxyManager.currentProxy.name}</span>`
-        : '<span style="font-size:0.9em;color:var(--gray)">Usando: Acesso direto à API</span>';
-    }
-    
-    // Adicionar estilo de significância clínica
-    let clinicalClass = '';
-    let clinText = clinicalSignificance;
-    if (clinicalSignificance.includes('pathogenic')) {
-      clinicalClass = 'clin-pathogenic';
-    } else if (clinicalSignificance.includes('benign')) {
-      clinicalClass = 'clin-benign';
-    } else if (clinicalSignificance.includes('uncertain')) {
-      clinicalClass = 'clin-uncertain';
-    }
-
-    this.elements.detailsEl.innerHTML = `
-      <h2>
-        Detalhes para ${rsid}
-        <small>${proxyInfo}</small>
-      </h2>
-      
-      ${errorMessages.length > 0 ? 
-        `<div style="padding:12px;background:rgba(230,57,70,0.1);border-radius:var(--radius);margin-bottom:20px;">
-           <strong>⚠️ Nota:</strong> ${errorMessages.join('<br>')}
-         </div>` : ''}
-      
-      <div class="external-links">
-        <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a>
-        <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a>
-        <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
-      </div>
-      
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:24px;margin-bottom:24px;">
-        <div>
-          <p><strong>Consequência Mais Grave:</strong> ${ensemblInfo.most_severe_consequence || 'N/A'}</p>
-          <p><strong>Alelo Ancestral:</strong> ${ensemblInfo.ancestral_allele || 'N/A'}</p>
-          <p><strong>Significância Clínica:</strong> <span class="${clinicalClass}">${clinText}</span></p>
-          <p><strong>Gene Mapeado:</strong> ${ensemblInfo.mapped_genes?.[0]?.gene_symbol || 'N/A'}</p>
-        </div>
-        <div>
-          <p><strong>Alelo Menor:</strong> ${ensemblInfo.minor_allele || 'N/A'}</p>
-          <p><strong>MAF:</strong> ${ensemblInfo.MAF ? ensemblInfo.MAF.toFixed(4) : 'N/A'}</p>
-          <p><strong>Assembly:</strong> ${ensemblInfo.assembly_name || 'N/A'}</p>
-        </div>
-      </div>
-
-      <h3>Frequências Populacionais</h3>
-      <ul class="freq-list">${popFreqHtml}</ul>
-      
-      <h3>Fenótipos</h3>
-      <ul class="phenotype-list">${phenotypesHtml}</ul>
-      
-      <h3>Informações do SNPedia</h3>
-      <div style="padding:16px;background:#f8f9fa;border-radius:var(--radius);">${snpediaSummary.replace(/\n/g, '<br>')}</div>
-      <div style="font-size:0.8em;color:var(--gray);text-align:right;margin-top:4px;">
-        Dados do SNPedia sob licença <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">CC BY-NC-SA 3.0 US</a>
-      </div>
-      
-      <details>
-        <summary>JSON de Variação Completo do Ensembl</summary>
-        <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
-      </details>
-    `;
-  },
-
-  /**
-   * Display prioritized gene analysis
-   * @param {Object} data - Prioritized gene data
-   */
-  displayPrioritizedGeneAnalysis(data) {
-    const { prioritizedSNPs, categorizedSNPs, stats } = data;
-    
-    if (prioritizedSNPs.length === 0) {
-      this.elements.geneAnalysisEl.innerHTML = `
+    if (!geneGroups || Object.keys(geneGroups).length === 0) {
+      this.elements.genesEl.innerHTML = `
         <div class="info-panel">
-          <h3>Gene Analysis</h3>
-          <p>No matches found for medically significant genes in your DNA data.</p>
+          <h3>Gene Discovery Results</h3>
+          <p>No significant genes were found in your DNA data.</p>
         </div>
       `;
       return;
     }
     
-    // Create gene analysis section
+    // Create discovery stats section
     let html = `
-      <div class="section-header">
-        <h2 class="section-title">Gene Analysis</h2>
-        <div>
-          <span class="badge">${stats.total} matches</span>
+      <div class="discovery-stats">
+        <div class="stat-item">
+          <div class="stat-value">${stats.totalFound}</div>
+          <div class="stat-label">Relevant SNPs</div>
         </div>
-      </div>
-      
-      <div class="gene-stats">
-        <h3>SNPs by Category</h3>
-        <div class="category-stats">
-    `;
-    
-    // Add category stats
-    Object.entries(stats.categories).forEach(([category, count]) => {
-      html += `
-        <div class="category-stat">
-          <div class="category-name">${category}</div>
-          <div class="category-count">${count}</div>
+        <div class="stat-item">
+          <div class="stat-value">${stats.geneCount}</div>
+          <div class="stat-label">Genes</div>
         </div>
-      `;
-    });
-    
-    html += `
+        <div class="stat-item">
+          <div class="stat-value">${stats.locallyIdentified}</div>
+          <div class="stat-label">Clinical Markers</div>
         </div>
-      </div>
-      
-      <div class="gene-categories">
-    `;
-    
-    // Add categorized SNPs
-    Object.entries(categorizedSNPs).forEach(([category, snps]) => {
-      if (snps.length === 0) return;
-      
-      html += `
-        <div class="gene-category">
-          <h3>${category} (${snps.length})</h3>
-          <table class="gene-table">
-            <thead>
-              <tr>
-                <th>SNP</th>
-                <th>Gene</th>
-                <th>Your Genotype</th>
-                <th>Magnitude</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
-      
-      snps.forEach(snp => {
-        const magnitudeClass = snp.magnitude > 3 ? 'high-magnitude' : 
-                             snp.magnitude > 1 ? 'medium-magnitude' : 'low-magnitude';
-        
-        html += `
-          <tr>
-            <td><span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span></td>
-            <td>${snp.gene || '-'}</td>
-            <td>${snp.userGenotype || '-'}</td>
-            <td><span class="magnitude ${magnitudeClass}">${snp.magnitude || '-'}</span></td>
-            <td>${snp.description || 'No description available'}</td>
-          </tr>
-        `;
-      });
-      
-      html += `
-            </tbody>
-          </table>
-        </div>
-      `;
-    });
-    
-    html += `
-      </div>
-      <div class="info-panel">
-        <p>
-          <strong>Note:</strong> This analysis prioritizes SNPs associated with medically significant genes.
-          Magnitude values represent the potential medical significance according to SNPedia (0-10 scale).
-        </p>
-      </div>
-    `;
-    
-    // Display the gene analysis
-    this.elements.geneAnalysisEl.innerHTML = html;
-    this.elements.geneAnalysisEl.style.display = 'block';
-    
-    // Add click handlers to SNP links
-    this.elements.geneAnalysisEl.querySelectorAll('.snp-link').forEach(link => {
-      link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid));
-    });
-  },
-
-  // Exibir mensagem de erro
-  showError(errorMessage) {
-    this.resetUI();
-    this.hideLoading();
-    
-    const errorHtml = `
-      <div class="section" style="text-align:center;margin-top:40px;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="#e63946" viewBox="0 0 16 16">
-          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-          <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
-        </svg>
-        <h2 style="margin:20px 0">Erro ao Processar Arquivo DNA</h2>
-        <p style="color:var(--danger)">${errorMessage}</p>
-        <button class="btn btn-primary" style="margin-top:20px;" onclick="location.reload()">Tentar Novamente</button>
-      </div>
-    `;
-    
-    document.body.insertAdjacentHTML('beforeend', errorHtml);
-  },
-
-  /**
-   * Display gene discovery UI and process
-   */
-  async runGeneDiscovery() {
-    // Create or get the gene analysis content area
-    const genesPanel = document.getElementById('genes');
-    genesPanel.innerHTML = `
-      <div class="discovery-progress">
-        <h3>Discovering Relevant Genes</h3>
-        <div class="progress-container">
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: 0%"></div>
-          </div>
-          <div class="progress-text">Initializing...</div>
+        <div class="stat-item">
+          <div class="stat-value">${stats.fromSNPedia || 0}</div>
+          <div class="stat-label">From SNPedia</div>
         </div>
       </div>
     `;
-    
-    // Make sure the genes tab is visible
-    const geneTab = document.querySelector('.tab-btn[data-tab="genes"]');
-    if (geneTab) {
-      geneTab.click();
-    }
-    
-    try {
-      // Run gene discovery with progress updates
-      const discoveryResults = await DataManager.discoverRelevantGenes((progress) => {
-        this.updateGeneDiscoveryProgress(progress);
-      });
-      
-      // Show preliminary results
-      this.showGeneDiscoveryResults(discoveryResults);
-      
-      // Return the results for further processing if needed
-      return discoveryResults;
-    } catch (error) {
-      console.error("Gene discovery failed:", error);
-      genesPanel.innerHTML = `
-        <div class="error-panel">
-          <h3>Gene Discovery Failed</h3>
-          <p>${error.message}</p>
-          <button class="btn btn-primary" onclick="window.runGeneDiscovery()">Try Again</button>
-        </div>
-      `;
-      return null;
-    }
-  },
-  
-  /**
-   * Update the gene discovery progress UI
-   * @param {Object} progress - Progress information
-   */
-  updateGeneDiscoveryProgress(progress) {
-    const progressBar = document.querySelector('.progress-fill');
-    const progressText = document.querySelector('.progress-text');
-    
-    if (!progressBar || !progressText) return;
-    
-    const percent = Math.round(progress.progress * 100) || 0;
-    progressBar.style.width = `${percent}%`;
-    
-    let statusText = progress.stage || 'Processing...';
-    if (progress.findings) {
-      statusText += ` (Found: ${progress.findings})`;
-    }
-    
-    progressText.textContent = statusText;
-  },
-  
-  /**
-   * Display gene discovery results
-   * @param {Object} results - Gene discovery results
-   */
-  showGeneDiscoveryResults(results) {
-    const genesPanel = document.getElementById('genes');
     
     // Generate HTML for gene groups
-    let geneGroupsHtml = '';
-    for (const [gene, snps] of Object.entries(results.geneGroups)) {
-      geneGroupsHtml += `
+    html += `<div class="gene-groups">`;
+    
+    for (const [gene, snps] of Object.entries(geneGroups)) {
+      if (!snps || !snps.length) continue;
+      
+      html += `
         <div class="gene-card">
           <div class="gene-header">
             <h4>${gene}</h4>
@@ -683,148 +485,366 @@ const UIManager = {
       `;
     }
     
-    // Create summary stats
-    const statsHtml = `
-      <div class="discovery-stats">
-        <div class="stat-item">
-          <div class="stat-value">${results.stats.totalFound}</div>
-          <div class="stat-label">Relevant SNPs</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${results.stats.geneCount}</div>
-          <div class="stat-label">Genes</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${results.stats.locallyIdentified}</div>
-          <div class="stat-label">Clinical Markers</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${results.stats.fromSNPedia}</div>
-          <div class="stat-label">From SNPedia</div>
-        </div>
+    html += `</div>`;
+    
+    // Add some explanation
+    html += `
+      <div class="info-panel">
+        <p><strong>Note:</strong> The genes shown above have potential medical or phenotypic significance based on variants found in your DNA.</p>
+        <p>Click on any SNP to see detailed information. The significance tags indicate the potential impact level of each variant.</p>
       </div>
     `;
     
-    // Show results
-    genesPanel.innerHTML = `
-      <div class="discovery-results">
-        <h3>Relevant Genes Discovery Results</h3>
-        ${statsHtml}
-        <div class="gene-groups">
-          ${geneGroupsHtml || '<p>No significant genes discovered in your DNA data.</p>'}
-        </div>
-        <div class="action-buttons" style="margin-top:20px;">
-          <button id="fetchDetailsBtn" class="btn btn-primary">Fetch Detailed Data</button>
-        </div>
-      </div>
-    `;
+    // Display the content
+    this.elements.genesEl.innerHTML = html;
     
-    // Add click handler for SNP links
-    genesPanel.querySelectorAll('.snp-link').forEach(link => {
+    // Add click handlers for SNP links
+    this.elements.genesEl.querySelectorAll('.snp-link').forEach(link => {
       link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid));
     });
+  },
+
+  // Setup table for SNP data
+  setupTable() {
+    this.tableEl = document.createElement('table');
+    this.tableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th>rsID</th>
+          <th>Chromosome</th>
+          <th>Position</th>
+          <th>Genotype</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
     
-    // Add click handler for "Fetch Detailed Data" button
-    document.getElementById('fetchDetailsBtn')?.addEventListener('click', () => {
-      this.fetchDetailsForDiscoveredGenes(results);
+    if (this.elements.tableContainer) {
+      this.elements.tableContainer.innerHTML = '';
+      this.elements.tableContainer.append(this.tableEl);
+    }
+  },
+
+  // Setup chromosome filter
+  setupChromosomeFilter(results) {
+    if (!this.elements.chromFilter) return;
+    
+    const chroms = [...new Set(results.map(r => r.chromosome))].sort((a, b) => {
+      const na = parseInt(a); const nb = parseInt(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      if (!isNaN(na)) return -1; if (!isNaN(nb)) return 1;
+      return a.localeCompare(b);
+    });
+    
+    this.elements.chromFilter.innerHTML = '<option value="">All chromosomes</option>';
+    chroms.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = `Chromosome ${c}`;
+      this.elements.chromFilter.append(opt);
     });
   },
-  
-  /**
-   * Fetch detailed information for discovered genes
-   * @param {Object} discoveryResults - Results from gene discovery
-   */
-  async fetchDetailsForDiscoveredGenes(discoveryResults) {
-    const genesPanel = document.getElementById('genes');
+
+  // Render table page with filtered results
+  renderTablePage() {
+    if (!this.tableEl) return;
     
-    // Show progress indicator
-    genesPanel.insertAdjacentHTML('afterbegin', `
-      <div class="detail-progress">
-        <h3>Fetching Detailed Information</h3>
-        <div class="progress-container">
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: 0%"></div>
-          </div>
-          <div class="progress-text">Initializing...</div>
-        </div>
-      </div>
-    `);
+    const start = (DataManager.currentPage - 1) * DataManager.rowsPerPage;
+    const end = start + DataManager.rowsPerPage;
+    const pageData = DataManager.filteredResults.slice(start, end);
+
+    const tbody = this.tableEl.querySelector('tbody');
+    if (!tbody) return;
     
-    // Get the list of SNPs to fetch details for
-    const rsids = Object.keys(discoveryResults.matchingSNPs);
+    tbody.innerHTML = pageData.map(r => `
+      <tr data-rsid="${r.rsid}" tabindex="0" style="cursor:pointer;">
+        <td><span class="snp-link" data-rsid="${r.rsid}">${r.rsid}</span></td>
+        <td>${r.chromosome}</td>
+        <td>${r.position}</td>
+        <td>${r.Genotype}</td>
+      </tr>`).join('');
     
-    try {
-      // Fetch detailed data with progress updates
-      const detailedData = await DataManager.fetchDetailedGeneData(rsids, (progress) => {
-        const detailProgressBar = document.querySelector('.detail-progress .progress-fill');
-        const detailProgressText = document.querySelector('.detail-progress .progress-text');
-        
-        if (detailProgressBar && detailProgressText) {
-          detailProgressBar.style.width = `${progress.progress}%`;
-          detailProgressText.textContent = progress.stage || 'Processing...';
+    // Add listeners for row clicks and keyboard access
+    tbody.querySelectorAll('tr[data-rsid]').forEach(row => {
+      row.addEventListener('click', (e) => {
+        // Don't trigger if clicked directly on link
+        if (!e.target.classList.contains('snp-link')) {
+          this.fetchDetails(row.dataset.rsid);
         }
       });
       
-      // Remove progress indicator
-      document.querySelector('.detail-progress')?.remove();
-      
-      // Update the UI with detailed information
-      this.enhanceGeneDiscoveryWithDetails(discoveryResults, detailedData);
-    } catch (error) {
-      console.error("Error fetching detailed gene data:", error);
-      document.querySelector('.detail-progress')?.remove();
-      
-      // Show error message
-      genesPanel.insertAdjacentHTML('afterbegin', `
-        <div class="error-panel">
-          <h3>Error Fetching Details</h3>
-          <p>${error.message}</p>
-        </div>
-      `);
-    }
-  },
-  
-  /**
-   * Enhance gene discovery results with detailed information
-   * @param {Object} discoveryResults - Results from gene discovery
-   * @param {Object} detailedData - Detailed data from API
-   */
-  enhanceGeneDiscoveryWithDetails(discoveryResults, detailedData) {
-    // Find all SNP items in the UI
-    const snpItems = document.querySelectorAll('.gene-snps li');
-    
-    // Add detailed information to each SNP
-    snpItems.forEach(item => {
-      const rsid = item.querySelector('.snp-link').dataset.rsid;
-      const details = detailedData[rsid];
-      
-      if (!details) return;
-      
-      // Extract relevant information
-      const clinSig = (details.clinical_significance || []).join(', ');
-      const geneSymbol = details.mapped_genes?.length > 0 ? 
-        details.mapped_genes[0].gene_symbol : 'Unknown';
-      const consequence = details.most_severe_consequence || 'Unknown';
-      
-      // Add tooltip with detailed information
-      item.title = `Gene: ${geneSymbol}\nClinical Significance: ${clinSig || 'None'}\nConsequence: ${consequence}`;
-      item.classList.add('has-details');
-      
-      // Add clinical significance indicator if available
-      if (clinSig) {
-        let clinClass = '';
-        if (clinSig.includes('pathogenic')) clinClass = 'clin-pathogenic';
-        else if (clinSig.includes('benign')) clinClass = 'clin-benign';
-        else if (clinSig.includes('uncertain')) clinClass = 'clin-uncertain';
-        
-        if (clinClass) {
-          item.querySelector('.snp-link').classList.add(clinClass);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.fetchDetails(row.dataset.rsid);
         }
-      }
+      });
     });
     
-    // Add a "detailed" class to the main container
-    document.querySelector('.discovery-results').classList.add('detailed');
+    tbody.querySelectorAll('.snp-link').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.fetchDetails(link.dataset.rsid);
+      });
+    });
+  },
+
+  // Setup pagination controls
+  setupPagination() {
+    if (!this.elements.paginationEl) return;
+    
+    this.elements.paginationEl.innerHTML = '';
+    const totalPages = Math.ceil(DataManager.filteredResults.length / DataManager.rowsPerPage);
+
+    if (totalPages <= 1) return;
+
+    const prevButton = document.createElement('button');
+    prevButton.textContent = 'Previous';
+    prevButton.disabled = DataManager.currentPage === 1;
+    prevButton.addEventListener('click', () => {
+      if (DataManager.currentPage > 1) {
+        DataManager.currentPage--;
+        this.renderTablePage();
+        this.setupPagination();
+      }
+    });
+    this.elements.paginationEl.appendChild(prevButton);
+
+    const pageInfo = document.createElement('span');
+    pageInfo.textContent = ` Page ${DataManager.currentPage} of ${totalPages} `;
+    pageInfo.style.margin = '0 10px';
+    this.elements.paginationEl.appendChild(pageInfo);
+
+    const nextButton = document.createElement('button');
+    nextButton.textContent = 'Next';
+    nextButton.disabled = DataManager.currentPage === totalPages;
+    nextButton.addEventListener('click', () => {
+      if (DataManager.currentPage < totalPages) {
+        DataManager.currentPage++;
+        this.renderTablePage();
+        this.setupPagination();
+      }
+    });
+    this.elements.paginationEl.appendChild(nextButton);
+  },
+
+  // Handle filter changes
+  handleFilterChange() {
+    if (!this.elements.searchInput || !this.elements.chromFilter) return;
+    
+    const searchQuery = this.elements.searchInput.value;
+    const chromosomeFilter = this.elements.chromFilter.value;
+    
+    DataManager.filterResults(searchQuery, chromosomeFilter);
+    this.renderTablePage();
+    this.setupPagination();
+  },
+
+  // Download report as JSON
+  downloadReport() {
+    if (DataManager.allResults.length === 0) {
+      alert("No data loaded to download.");
+      return;
+    }
+    
+    const dataToDownload = DataManager.allResults;
+    const blob = new Blob([JSON.stringify(dataToDownload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dna_report.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  // Show error message
+  showError(errorMessage) {
+    this.hideLoading();
+    
+    const errorHtml = `
+      <div class="error-panel">
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" fill="var(--danger)" viewBox="0 0 16 16">
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+          <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
+        </svg>
+        <h2>Error Processing DNA File</h2>
+        <p>${errorMessage}</p>
+        <button class="btn btn-primary" onclick="window.location.reload()">Try Again</button>
+      </div>
+    `;
+    
+    // Show error in appropriate place based on current step
+    if (this.currentStep === 'upload' && this.elements.stepContents.upload) {
+      this.elements.stepContents.upload.innerHTML = errorHtml;
+    } else if (this.currentStep === 'processing' && this.elements.loading) {
+      this.elements.loading.innerHTML = errorHtml;
+    } else if (this.currentStep === 'discovery' && this.elements.discoveryProgress) {
+      this.elements.discoveryProgress.innerHTML = errorHtml;
+    }
+    
+    // Update status
+    this.updateStatusMessage('Error: ' + errorMessage);
+  },
+
+  // Fetch and display details for a SNP
+  async fetchDetails(rsid) {
+    if (!rsid || !this.elements.detailsEl || !this.elements.detailsContent) return;
+    
+    // Show details panel
+    this.elements.detailsEl.classList.add('open');
+    this.elements.detailsContent.innerHTML = `
+      <div class="details-loading">
+        <span class="spinner"></span>
+        <p>Loading details for ${rsid}...</p>
+      </div>
+    `;
+    
+    let ensemblInfo = {};
+    let popFreq = {};
+    let snpediaSummary = 'Could not fetch SNPedia summary.';
+    let errorMessages = [];
+
+    try {
+      // Fetch SNP data
+      ensemblInfo = await DataManager.fetchSnp(rsid);
+    } catch (err) {
+      errorMessages.push(`Failed to fetch Ensembl variation data: ${err.message}`);
+    }
+
+    // Fetch population frequencies
+    if (ensemblInfo.name) {
+      try {
+        const pfData = await DataManager.fetchPopulationFrequencies(rsid);
+        if (pfData && pfData.length > 0) {
+          popFreq = pfData.reduce((acc, p) => {
+            acc[p.population] = p.frequency !== undefined ? p.frequency.toFixed(4) : 'N/A';
+            return acc;
+          }, {});
+        } else {
+          popFreq = { 'Info': 'No population data available.' };
+        }
+      } catch (err) {
+        errorMessages.push(`Failed to fetch population frequencies: ${err.message}`);
+        popFreq = { 'Error': 'Could not load data.' };
+      }
+    } else {
+      popFreq = { 'Info': 'Skipped due to error in variation lookup.' };
+    }
+
+    // Fetch SNPedia information
+    try {
+      snpediaSummary = await DataManager.fetchSnpediaSummary(rsid);
+    } catch (err) {
+      errorMessages.push(`Failed to fetch SNPedia summary: ${err.message}`);
+    }
+
+    // Render details
+    const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'none';
+    const popFreqHtml = Object.entries(popFreq).length > 0 
+      ? Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('') 
+      : '<li>No population data available</li>';
+    const phenotypesHtml = (ensemblInfo.phenotypes || []).length > 0
+      ? (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('')
+      : '<li>No phenotype data available</li>';
+
+    // Show which proxy is being used (if any)
+    let proxyInfo = '<span class="proxy-info">Proxy status: Not initialized</span>';
+    if (window.proxyManager && window.proxyManager.isInitialized && window.proxyManager.currentProxy) {
+      proxyInfo = window.proxyManager.currentProxy.url
+        ? `<span class="proxy-info">Using proxy: ${window.proxyManager.currentProxy.name}</span>`
+        : '<span class="proxy-info">Using: Direct API access</span>';
+    }
+    
+    // Add clinical significance style
+    let clinicalClass = '';
+    let clinText = clinicalSignificance;
+    if (clinicalSignificance.includes('pathogenic')) {
+      clinicalClass = 'clin-pathogenic';
+    } else if (clinicalSignificance.includes('benign')) {
+      clinicalClass = 'clin-benign';
+    } else if (clinicalSignificance.includes('uncertain')) {
+      clinicalClass = 'clin-uncertain';
+    }
+
+    this.elements.detailsContent.innerHTML = `
+      <div class="details-header-info">
+        <h2>${rsid}</h2>
+        <div class="details-meta">${proxyInfo}</div>
+      </div>
+      
+      ${errorMessages.length > 0 ? 
+        `<div class="error-message">
+           <strong>⚠️ Note:</strong> ${errorMessages.join('<br>')}
+         </div>` : ''}
+      
+      <div class="external-links">
+        <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a>
+        <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a>
+        <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
+      </div>
+      
+      <div class="details-grid">
+        <div class="details-item">
+          <label>Most Severe Consequence:</label>
+          <span>${ensemblInfo.most_severe_consequence || 'N/A'}</span>
+        </div>
+        <div class="details-item">
+          <label>Ancestral Allele:</label>
+          <span>${ensemblInfo.ancestral_allele || 'N/A'}</span>
+        </div>
+        <div class="details-item">
+          <label>Clinical Significance:</label>
+          <span class="${clinicalClass}">${clinText || 'N/A'}</span>
+        </div>
+        <div class="details-item">
+          <label>Mapped Gene:</label>
+          <span>${ensemblInfo.mapped_genes?.[0]?.gene_symbol || 'N/A'}</span>
+        </div>
+        <div class="details-item">
+          <label>Minor Allele:</label>
+          <span>${ensemblInfo.minor_allele || 'N/A'}</span>
+        </div>
+        <div class="details-item">
+          <label>MAF:</label>
+          <span>${ensemblInfo.MAF ? ensemblInfo.MAF.toFixed(4) : 'N/A'}</span>
+        </div>
+        <div class="details-item">
+          <label>Assembly:</label>
+          <span>${ensemblInfo.assembly_name || 'N/A'}</span>
+        </div>
+      </div>
+
+      <div class="details-section">
+        <h3>Population Frequencies</h3>
+        <ul class="freq-list">${popFreqHtml}</ul>
+      </div>
+      
+      <div class="details-section">
+        <h3>Phenotypes</h3>
+        <ul class="phenotype-list">${phenotypesHtml}</ul>
+      </div>
+      
+      <div class="details-section">
+        <h3>SNPedia Information</h3>
+        <div class="snpedia-info">${snpediaSummary.replace(/\n/g, '<br>')}</div>
+        <div class="attribution">
+          Data from SNPedia under <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">CC BY-NC-SA 3.0 US</a>
+        </div>
+      </div>
+      
+      <details>
+        <summary>Complete Variation JSON</summary>
+        <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
+      </details>
+    `;
+  },
+  
+  // Hide details panel
+  hideDetails() {
+    if (this.elements.detailsEl) {
+      this.elements.detailsEl.classList.remove('open');
+    }
   }
 };
 
