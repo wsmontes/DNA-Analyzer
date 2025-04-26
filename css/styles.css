@@ -860,3 +860,96 @@ select {
   background: rgba(12, 206, 107, 0.05);
   border-left: 3px solid var(--success);
 }
+
+/* API Analysis Button */
+.api-analysis-btn {
+  margin: 20px auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 300px;
+}
+
+.api-btn-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: 15px;
+}
+
+/* API Progress Panel */
+.api-progress-panel {
+  background: rgba(67, 97, 238, 0.1);
+  border-radius: var(--radius);
+  padding: 15px;
+  margin: 15px 0;
+  border: 1px solid rgba(67, 97, 238, 0.2);
+}
+
+/* API Findings Section */
+.api-findings-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--gray-light);
+}
+
+.api-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-finding {
+  background-color: rgba(67, 97, 238, 0.05) !important;
+  border-left: 3px solid var(--primary);
+}
+
+.finding-title {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.finding-description {
+  font-size: 0.9em;
+}
+
+.finding-source {
+  font-size: 0.8em;
+  color: var(--gray);
+  margin-top: 5px;
+  font-style: italic;
+}
+
+/* Enriched Data */
+.enriched-data {
+  background-color: rgba(12, 206, 107, 0.05);
+}
+
+/* API Error Message */
+.api-error {
+  background-color: rgba(255, 76, 76, 0.1);
+  border: 1px solid rgba(255, 76, 76, 0.3);
+  border-radius: var(--radius);
+  padding: 15px;
+  margin: 15px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-error .retry-btn {
+  margin-left: auto;
+  padding: 5px 10px;
+  background-color: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.api-error .retry-btn:hover {
+  background-color: var(--primary-dark);
+}

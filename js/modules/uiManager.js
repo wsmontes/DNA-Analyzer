@@ -51,7 +51,8 @@ const UIManager = {
       traitsEl: document.getElementById('traits'),
       genesEl: document.getElementById('genes'),
       uploadArea: document.getElementById('uploadArea'),
-      fileInput: document.getElementById('fileInput')
+      fileInput: document.getElementById('fileInput'),
+      apiAnalysisBtn: document.getElementById('apiAnalysisBtn') // Add API analysis button element
     };
 
     // Setup tab functionality for results
@@ -97,6 +98,7 @@ const UIManager = {
     this.elements.searchInput?.addEventListener('input', () => this.handleFilterChange());
     this.elements.chromFilter?.addEventListener('change', () => this.handleFilterChange());
     this.elements.downloadBtn?.addEventListener('click', () => this.downloadReport());
+    this.elements.apiAnalysisBtn?.addEventListener('click', () => this.performApiAnalysis());
   },
   
   // Setup drag and drop functionality
@@ -357,6 +359,9 @@ const UIManager = {
           <div class="label">SNPs Significativos</div>
         </div>
       `;
+      
+      // Add API analysis button
+      this.showApiAnalysisButton();
     }
     
     // Update insights
@@ -463,246 +468,216 @@ const UIManager = {
       link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid || link.textContent));
     });
   },
-
-  // Display gene discovery results
-  displayGeneResults(results) {
-    if (!results || !this.elements.genesEl) return;
-    
-    const { geneGroups, stats } = results;
-    
-    if (!geneGroups || Object.keys(geneGroups).length === 0) {
-      this.elements.genesEl.innerHTML = `
-        <div class="info-panel">
-          <h3>Gene Discovery Results</h3>
-          <p>No significant genes were found in your DNA data.</p>
-        </div>
-      `;
-      return;
+  
+  // Show API Analysis button
+  showApiAnalysisButton() {
+    // Create API Analysis button if it doesn't exist
+    if (!this.elements.apiAnalysisBtn) {
+      const apiBtn = document.createElement('button');
+      apiBtn.id = 'apiAnalysisBtn';
+      apiBtn.className = 'btn btn-primary api-analysis-btn';
+      apiBtn.innerHTML = '<i class="fas fa-cloud"></i> Perform Extended Online Analysis';
+      apiBtn.addEventListener('click', () => this.performApiAnalysis());
+      
+      // Add the button to the dashboard or insights section
+      if (this.elements.dashboardEl) {
+        const btnContainer = document.createElement('div');
+        btnContainer.className = 'api-btn-container';
+        btnContainer.appendChild(apiBtn);
+        this.elements.dashboardEl.appendChild(btnContainer);
+        this.elements.apiAnalysisBtn = apiBtn;
+      }
     }
+  },
+  
+  // Handle API analysis button click
+  performApiAnalysis() {
+    if (!this.elements.apiAnalysisBtn) return;
     
-    // Create discovery stats section
-    let html = `
-      <div class="discovery-stats">
-        <div class="stat-item">
-          <div class="stat-value">${stats.totalFound}</div>
-          <div class="stat-label">Relevant SNPs</div>
+    // Update button state
+    this.elements.apiAnalysisBtn.disabled = true;
+    this.elements.apiAnalysisBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting to External APIs...';
+    
+    // Show a progress indicator
+    this.showApiProgress();
+    
+    // Trigger the API analysis in the main application
+    // This will be defined in main.js and be available globally
+    if (typeof window.performApiAnalysis === 'function') {
+      window.performApiAnalysis()
+        .then(results => {
+          this.hideApiProgress();
+          this.updateUIWithApiResults(results);
+          
+          // Update button state
+          this.elements.apiAnalysisBtn.innerHTML = '<i class="fas fa-check-circle"></i> Online Analysis Complete';
+          this.elements.apiAnalysisBtn.className = 'btn btn-success api-analysis-btn';
+        })
+        .catch(error => {
+          this.hideApiProgress();
+          
+          // Show error in button
+          this.elements.apiAnalysisBtn.innerHTML = '<i class="fas fa-exclamation-circle"></i> API Analysis Failed';
+          this.elements.apiAnalysisBtn.className = 'btn btn-danger api-analysis-btn';
+          this.elements.apiAnalysisBtn.disabled = false;
+          
+          // Show error message
+          this.showApiError(error.message || 'Failed to perform online analysis');
+        });
+    }
+  },
+  
+  // Show API progress indicator
+  showApiProgress() {
+    // Create or update a progress panel for API analysis
+    const progressPanel = document.createElement('div');
+    progressPanel.id = 'api-progress-panel';
+    progressPanel.className = 'api-progress-panel';
+    progressPanel.innerHTML = `
+      <div class="progress-container">
+        <div class="progress-bar indeterminate">
+          <div class="progress-track"></div>
         </div>
-        <div class="stat-item">
-          <div class="stat-value">${stats.geneCount}</div>
-          <div class="stat-label">Genes</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${stats.locallyIdentified}</div>
-          <div class="stat-label">Clinical Markers</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${stats.fromSNPedia || 0}</div>
-          <div class="stat-label">From SNPedia</div>
-        </div>
+        <div class="progress-text">Connecting to external databases...</div>
       </div>
     `;
     
-    // Generate HTML for gene groups
-    html += `<div class="gene-groups">`;
+    // Add to insights section
+    if (this.elements.insightsEl) {
+      const existingPanel = document.getElementById('api-progress-panel');
+      if (existingPanel) {
+        existingPanel.parentNode.replaceChild(progressPanel, existingPanel);
+      } else {
+        this.elements.insightsEl.prepend(progressPanel);
+      }
+    }
+  },
+  
+  // Hide API progress indicator
+  hideApiProgress() {
+    const progressPanel = document.getElementById('api-progress-panel');
+    if (progressPanel) {
+      progressPanel.remove();
+    }
+  },
+  
+  // Show API error message
+  showApiError(message) {
+    const errorPanel = document.createElement('div');
+    errorPanel.className = 'error-message api-error';
+    errorPanel.innerHTML = `
+      <i class="fas fa-exclamation-triangle"></i> ${message}
+      <button class="retry-btn">Retry</button>
+    `;
     
-    for (const [gene, snps] of Object.entries(geneGroups)) {
-      if (!snps || !snps.length) continue;
+    // Add to insights section
+    if (this.elements.insightsEl) {
+      const existingError = this.elements.insightsEl.querySelector('.api-error');
+      if (existingError) {
+        existingError.parentNode.replaceChild(errorPanel, existingError);
+      } else {
+        this.elements.insightsEl.prepend(errorPanel);
+      }
       
-      html += `
-        <div class="gene-card">
-          <div class="gene-header">
-            <h4>${gene}</h4>
-            <span class="gene-count">${snps.length} SNPs</span>
-          </div>
-          <div class="gene-snps">
-            <ul>
-              ${snps.map(snp => `
-                <li>
-                  <span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span> 
-                  ${snp.condition ? `<span class="condition-tag">${snp.condition}</span>` : ''}
-                  ${snp.significance ? `<span class="significance-tag ${snp.significance}">${snp.significance}</span>` : ''}
-                  ${snp.magnitude ? `<span class="magnitude-tag">${snp.magnitude}</span>` : ''}
-                </li>
-              `).join('')}
-            </ul>
-          </div>
+      // Add retry button handler
+      errorPanel.querySelector('.retry-btn').addEventListener('click', () => {
+        errorPanel.remove();
+        this.performApiAnalysis();
+      });
+    }
+  },
+  
+  // Update UI with API analysis results
+  updateUIWithApiResults(results) {
+    if (!results) return;
+    
+    const { 
+      enrichedTraits, 
+      apiFindings, 
+      clinicalData, 
+      ancestryData 
+    } = results;
+    
+    // Update insights with new information from APIs
+    if (this.elements.insightsEl && apiFindings && apiFindings.length > 0) {
+      const apiSection = document.createElement('div');
+      apiSection.className = 'api-findings-section';
+      apiSection.innerHTML = `
+        <h3>Extended Analysis Results</h3>
+        <div class="api-insights">
+          ${apiFindings.map(finding => `
+            <div class="insight-item api-finding">
+              <div class="finding-title">${finding.title}</div>
+              <div class="finding-description">${finding.description}</div>
+              ${finding.source ? `<div class="finding-source">Source: ${finding.source}</div>` : ''}
+            </div>
+          `).join('')}
         </div>
       `;
-    }
-    
-    html += `</div>`;
-    
-    // Add some explanation
-    html += `
-      <div class="info-panel">
-        <p><strong>Note:</strong> The genes shown above have potential medical or phenotypic significance based on variants found in your DNA.</p>
-        <p>Click on any SNP to see detailed information. The significance tags indicate the potential impact level of each variant.</p>
-      </div>
-    `;
-    
-    // Display the content
-    this.elements.genesEl.innerHTML = html;
-    
-    // Add click handlers for SNP links
-    this.elements.genesEl.querySelectorAll('.snp-link').forEach(link => {
-      link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid));
-    });
-  },
-
-  // Setup table for SNP data
-  setupTable() {
-    this.tableEl = document.createElement('table');
-    this.tableEl.innerHTML = `
-      <thead>
-        <tr>
-          <th>rsID</th>
-          <th>Chromosome</th>
-          <th>Position</th>
-          <th>Genotype</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
-    
-    if (this.elements.tableContainer) {
-      this.elements.tableContainer.innerHTML = '';
-      this.elements.tableContainer.append(this.tableEl);
-    }
-  },
-
-  // Setup chromosome filter
-  setupChromosomeFilter(results) {
-    if (!this.elements.chromFilter) return;
-    
-    const chroms = [...new Set(results.map(r => r.chromosome))].sort((a, b) => {
-      const na = parseInt(a); const nb = parseInt(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      if (!isNaN(na)) return -1; if (!isNaN(nb)) return 1;
-      return a.localeCompare(b);
-    });
-    
-    this.elements.chromFilter.innerHTML = '<option value="">All chromosomes</option>';
-    chroms.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c; opt.textContent = `Chromosome ${c}`;
-      this.elements.chromFilter.append(opt);
-    });
-  },
-
-  // Render table page with filtered results
-  renderTablePage() {
-    if (!this.tableEl) return;
-    
-    const start = (DataManager.currentPage - 1) * DataManager.rowsPerPage;
-    const end = start + DataManager.rowsPerPage;
-    const pageData = DataManager.filteredResults.slice(start, end);
-
-    const tbody = this.tableEl.querySelector('tbody');
-    if (!tbody) return;
-    
-    tbody.innerHTML = pageData.map(r => `
-      <tr data-rsid="${r.rsid}" tabindex="0" style="cursor:pointer;">
-        <td><span class="snp-link" data-rsid="${r.rsid}">${r.rsid}</span></td>
-        <td>${r.chromosome}</td>
-        <td>${r.position}</td>
-        <td>${r.Genotype}</td>
-      </tr>`).join('');
-    
-    // Add listeners for row clicks and keyboard access
-    tbody.querySelectorAll('tr[data-rsid]').forEach(row => {
-      row.addEventListener('click', (e) => {
-        // Don't trigger if clicked directly on link
-        if (!e.target.classList.contains('snp-link')) {
-          this.fetchDetails(row.dataset.rsid);
-        }
-      });
       
-      row.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this.fetchDetails(row.dataset.rsid);
-        }
-      });
-    });
-    
-    tbody.querySelectorAll('.snp-link').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.fetchDetails(link.dataset.rsid);
-      });
-    });
-  },
-
-  // Setup pagination controls
-  setupPagination() {
-    if (!this.elements.paginationEl) return;
-    
-    this.elements.paginationEl.innerHTML = '';
-    const totalPages = Math.ceil(DataManager.filteredResults.length / DataManager.rowsPerPage);
-
-    if (totalPages <= 1) return;
-
-    const prevButton = document.createElement('button');
-    prevButton.textContent = 'Previous';
-    prevButton.disabled = DataManager.currentPage === 1;
-    prevButton.addEventListener('click', () => {
-      if (DataManager.currentPage > 1) {
-        DataManager.currentPage--;
-        this.renderTablePage();
-        this.setupPagination();
+      // Replace existing API section or append new one
+      const existingApiSection = this.elements.insightsEl.querySelector('.api-findings-section');
+      if (existingApiSection) {
+        existingApiSection.parentNode.replaceChild(apiSection, existingApiSection);
+      } else {
+        this.elements.insightsEl.appendChild(apiSection);
       }
-    });
-    this.elements.paginationEl.appendChild(prevButton);
-
-    const pageInfo = document.createElement('span');
-    pageInfo.textContent = ` Page ${DataManager.currentPage} of ${totalPages} `;
-    pageInfo.style.margin = '0 10px';
-    this.elements.paginationEl.appendChild(pageInfo);
-
-    const nextButton = document.createElement('button');
-    nextButton.textContent = 'Next';
-    nextButton.disabled = DataManager.currentPage === totalPages;
-    nextButton.addEventListener('click', () => {
-      if (DataManager.currentPage < totalPages) {
-        DataManager.currentPage++;
-        this.renderTablePage();
-        this.setupPagination();
-      }
-    });
-    this.elements.paginationEl.appendChild(nextButton);
-  },
-
-  // Handle filter changes
-  handleFilterChange() {
-    if (!this.elements.searchInput || !this.elements.chromFilter) return;
-    
-    const searchQuery = this.elements.searchInput.value;
-    const chromosomeFilter = this.elements.chromFilter.value;
-    
-    DataManager.filterResults(searchQuery, chromosomeFilter);
-    this.renderTablePage();
-    this.setupPagination();
-  },
-
-  // Download report as JSON
-  downloadReport() {
-    if (DataManager.allResults.length === 0) {
-      alert("No data loaded to download.");
-      return;
     }
     
-    const dataToDownload = DataManager.allResults;
-    const blob = new Blob([JSON.stringify(dataToDownload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'dna_report.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Update traits with enriched data
+    if (this.elements.traitsEl && enrichedTraits && enrichedTraits.length > 0) {
+      // Update existing traits with enhanced information
+      // This implementation depends on your specific data structure
+      this.updateTraitsWithEnrichedData(enrichedTraits);
+    }
   },
-
+  
+  // Update traits panel with enriched data from APIs
+  updateTraitsWithEnrichedData(enrichedTraits) {
+    // Find existing trait rows and enhance them with new data
+    const traitRows = this.elements.traitsEl.querySelectorAll('tbody tr');
+    if (!traitRows.length) return;
+    
+    // Create a mapping of rsIDs to enriched data
+    const enrichedMap = {};
+    enrichedTraits.forEach(item => {
+      enrichedMap[item.rsid] = item;
+    });
+    
+    // Update each row with enriched data if available
+    traitRows.forEach(row => {
+      const rsidCell = row.querySelector('td:first-child');
+      if (!rsidCell) return;
+      
+      const rsid = rsidCell.textContent.trim();
+      const enrichedData = enrichedMap[rsid];
+      
+      if (enrichedData) {
+        // Add visual indicator for enriched data
+        row.classList.add('enriched-data');
+        
+        // Enhanced phenotypes cell with more detailed information
+        const phenotypesCell = row.querySelector('td:nth-child(4)');
+        if (phenotypesCell && enrichedData.expandedPhenotypes) {
+          phenotypesCell.innerHTML = enrichedData.expandedPhenotypes
+            .map(p => `<span class="phenotype-item" title="${p.source || ''}">${p.description}</span>`)
+            .join('; ');
+        }
+        
+        // Update magnitude if available
+        const magnitudeCell = row.querySelector('td:nth-child(5) .magnitude');
+        if (magnitudeCell && enrichedData.updatedMagnitude) {
+          // Update magnitude class if changed
+          const newMagnitudeClass = enrichedData.updatedMagnitude >= 7 ? 'high-magnitude' : 
+                                  enrichedData.updatedMagnitude >= 4 ? 'medium-magnitude' : 'low-magnitude';
+          
+          magnitudeCell.className = `magnitude ${newMagnitudeClass}`;
+          magnitudeCell.textContent = enrichedData.updatedMagnitude;
+        }
+      }
+    });
+  },
+  
   // Show error message
   showError(errorMessage) {
     this.hideLoading();
@@ -732,164 +707,128 @@ const UIManager = {
     this.updateStatusMessage('Error: ' + errorMessage);
   },
 
-  // Fetch and display details for a SNP
-  async fetchDetails(rsid) {
-    if (!rsid || !this.elements.detailsEl || !this.elements.detailsContent) return;
+  // Fetch details for a SNP
+  fetchDetails(rsid) {
+    if (!rsid) return;
     
-    // Show details panel
-    this.elements.detailsEl.classList.add('open');
+    this.showDetails();
     this.elements.detailsContent.innerHTML = `
-      <div class="details-loading">
+      <div class="loading-details">
         <span class="spinner"></span>
-        <p>Loading details for ${rsid}...</p>
+        <div>Loading details for ${rsid}...</div>
       </div>
     `;
     
-    let ensemblInfo = {};
-    let popFreq = {};
-    let snpediaSummary = 'Could not fetch SNPedia summary.';
-    let errorMessages = [];
-
-    try {
-      // Fetch SNP data
-      ensemblInfo = await DataManager.fetchSnp(rsid);
-    } catch (err) {
-      errorMessages.push(`Failed to fetch Ensembl variation data: ${err.message}`);
+    // Fetch SNP details (this would be handled by DataManager)
+    if (typeof DataManager.fetchSnpDetails === 'function') {
+      DataManager.fetchSnpDetails(rsid)
+        .then(details => this.renderDetails(details))
+        .catch(error => {
+          this.elements.detailsContent.innerHTML = `
+            <div class="error-panel">
+              <h3>Error Loading Details</h3>
+              <p>${error.message || 'Could not load details for this SNP'}</p>
+            </div>
+          `;
+        });
     }
-
-    // Fetch population frequencies
-    if (ensemblInfo.name) {
-      try {
-        const pfData = await DataManager.fetchPopulationFrequencies(rsid);
-        if (pfData && pfData.length > 0) {
-          popFreq = pfData.reduce((acc, p) => {
-            acc[p.population] = p.frequency !== undefined ? p.frequency.toFixed(4) : 'N/A';
-            return acc;
-          }, {});
-        } else {
-          popFreq = { 'Info': 'No population data available.' };
-        }
-      } catch (err) {
-        errorMessages.push(`Failed to fetch population frequencies: ${err.message}`);
-        popFreq = { 'Error': 'Could not load data.' };
-      }
-    } else {
-      popFreq = { 'Info': 'Skipped due to error in variation lookup.' };
+  },
+  
+  // Show details panel
+  showDetails() {
+    if (this.elements.detailsEl) {
+      this.elements.detailsEl.classList.add('visible');
     }
-
-    // Fetch SNPedia information
-    try {
-      snpediaSummary = await DataManager.fetchSnpediaSummary(rsid);
-    } catch (err) {
-      errorMessages.push(`Failed to fetch SNPedia summary: ${err.message}`);
-    }
-
-    // Render details
-    const clinicalSignificance = (ensemblInfo.clinical_significance || []).join(', ') || 'none';
-    const popFreqHtml = Object.entries(popFreq).length > 0 
-      ? Object.entries(popFreq).map(([pop, freq]) => `<li>${pop}: ${freq}</li>`).join('') 
-      : '<li>No population data available</li>';
-    const phenotypesHtml = (ensemblInfo.phenotypes || []).length > 0
-      ? (ensemblInfo.phenotypes || []).map(p => `<li>${p.description}</li>`).join('')
-      : '<li>No phenotype data available</li>';
-
-    // Show which proxy is being used (if any)
-    let proxyInfo = '<span class="proxy-info">Proxy status: Not initialized</span>';
-    if (window.proxyManager && window.proxyManager.isInitialized && window.proxyManager.currentProxy) {
-      proxyInfo = window.proxyManager.currentProxy.url
-        ? `<span class="proxy-info">Using proxy: ${window.proxyManager.currentProxy.name}</span>`
-        : '<span class="proxy-info">Using: Direct API access</span>';
-    }
-    
-    // Add clinical significance style
-    let clinicalClass = '';
-    let clinText = clinicalSignificance;
-    if (clinicalSignificance.includes('pathogenic')) {
-      clinicalClass = 'clin-pathogenic';
-    } else if (clinicalSignificance.includes('benign')) {
-      clinicalClass = 'clin-benign';
-    } else if (clinicalSignificance.includes('uncertain')) {
-      clinicalClass = 'clin-uncertain';
-    }
-
-    this.elements.detailsContent.innerHTML = `
-      <div class="details-header-info">
-        <h2>${rsid}</h2>
-        <div class="details-meta">${proxyInfo}</div>
-      </div>
-      
-      ${errorMessages.length > 0 ? 
-        `<div class="error-message">
-           <strong>⚠️ Note:</strong> ${errorMessages.join('<br>')}
-         </div>` : ''}
-      
-      <div class="external-links">
-        <a href="https://www.snpedia.com/index.php/${rsid}" target="_blank">SNPedia</a>
-        <a href="https://www.ncbi.nlm.nih.gov/snp/${rsid}" target="_blank">dbSNP</a>
-        <a href="https://grch37.ensembl.org/Homo_sapiens/Variation/Summary?v=${rsid}" target="_blank">Ensembl</a>
-      </div>
-      
-      <div class="details-grid">
-        <div class="details-item">
-          <label>Most Severe Consequence:</label>
-          <span>${ensemblInfo.most_severe_consequence || 'N/A'}</span>
-        </div>
-        <div class="details-item">
-          <label>Ancestral Allele:</label>
-          <span>${ensemblInfo.ancestral_allele || 'N/A'}</span>
-        </div>
-        <div class="details-item">
-          <label>Clinical Significance:</label>
-          <span class="${clinicalClass}">${clinText || 'N/A'}</span>
-        </div>
-        <div class="details-item">
-          <label>Mapped Gene:</label>
-          <span>${ensemblInfo.mapped_genes?.[0]?.gene_symbol || 'N/A'}</span>
-        </div>
-        <div class="details-item">
-          <label>Minor Allele:</label>
-          <span>${ensemblInfo.minor_allele || 'N/A'}</span>
-        </div>
-        <div class="details-item">
-          <label>MAF:</label>
-          <span>${ensemblInfo.MAF ? ensemblInfo.MAF.toFixed(4) : 'N/A'}</span>
-        </div>
-        <div class="details-item">
-          <label>Assembly:</label>
-          <span>${ensemblInfo.assembly_name || 'N/A'}</span>
-        </div>
-      </div>
-
-      <div class="details-section">
-        <h3>Population Frequencies</h3>
-        <ul class="freq-list">${popFreqHtml}</ul>
-      </div>
-      
-      <div class="details-section">
-        <h3>Phenotypes</h3>
-        <ul class="phenotype-list">${phenotypesHtml}</ul>
-      </div>
-      
-      <div class="details-section">
-        <h3>SNPedia Information</h3>
-        <div class="snpedia-info">${snpediaSummary.replace(/\n/g, '<br>')}</div>
-        <div class="attribution">
-          Data from SNPedia under <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/us/" target="_blank">CC BY-NC-SA 3.0 US</a>
-        </div>
-      </div>
-      
-      <details>
-        <summary>Complete Variation JSON</summary>
-        <pre>${JSON.stringify(ensemblInfo, null, 2)}</pre>
-      </details>
-    `;
   },
   
   // Hide details panel
   hideDetails() {
     if (this.elements.detailsEl) {
-      this.elements.detailsEl.classList.remove('open');
+      this.elements.detailsEl.classList.remove('visible');
     }
+  },
+  
+  // Render SNP details
+  renderDetails(details) {
+    if (!details || !this.elements.detailsContent) return;
+    
+    // Basic structure for details
+    let html = `
+      <div class="detail-header">
+        <h2>${details.rsid}</h2>
+        <div class="genotype">${details.genotype || ''}</div>
+      </div>
+      <div class="detail-tabs">
+        <div class="tab active" data-tab="summary">Summary</div>
+        <div class="tab" data-tab="clinical">Clinical</div>
+        <div class="tab" data-tab="technical">Technical</div>
+      </div>
+      <div class="detail-content">
+        <div class="tab-pane active" id="summary-pane">
+          <div class="detail-section">
+            <h3>Overview</h3>
+            <p>${details.summary || 'No summary available.'}</p>
+          </div>
+          ${details.traits && details.traits.length ? `
+            <div class="detail-section">
+              <h3>Associated Traits</h3>
+              <ul class="trait-list">
+                ${details.traits.map(trait => `
+                  <li class="trait-item">
+                    <span class="trait-name">${trait.name}</span>
+                    ${trait.description ? `<p class="trait-description">${trait.description}</p>` : ''}
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          ` : ''}
+        </div>
+        
+        <div class="tab-pane" id="clinical-pane">
+          ${details.clinical ? `
+            <div class="detail-section">
+              <h3>Clinical Significance</h3>
+              <div class="clinical-significance">
+                <span class="significance-level ${details.clinical.significance || 'unknown'}">${details.clinical.significance || 'Unknown'}</span>
+                ${details.clinical.condition ? `<p>Condition: ${details.clinical.condition}</p>` : ''}
+              </div>
+            </div>
+          ` : '<p>No clinical data available.</p>'}
+        </div>
+        
+        <div class="tab-pane" id="technical-pane">
+          <div class="detail-section">
+            <h3>Variant Information</h3>
+            <table class="technical-info">
+              <tr><td>Chromosome:</td><td>${details.chromosome || '-'}</td></tr>
+              <tr><td>Position:</td><td>${details.position || '-'}</td></tr>
+              <tr><td>Reference:</td><td>${details.reference || '-'}</td></tr>
+              <tr><td>Alternate:</td><td>${details.alternate || '-'}</td></tr>
+              <tr><td>Gene:</td><td>${details.gene || '-'}</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    this.elements.detailsContent.innerHTML = html;
+    
+    // Add tab switching functionality
+    const tabs = this.elements.detailsContent.querySelectorAll('.tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Deactivate all tabs
+        tabs.forEach(t => t.classList.remove('active'));
+        this.elements.detailsContent.querySelectorAll('.tab-pane').forEach(pane => {
+          pane.classList.remove('active');
+        });
+        
+        // Activate clicked tab
+        tab.classList.add('active');
+        const tabId = `${tab.dataset.tab}-pane`;
+        this.elements.detailsContent.querySelector(`#${tabId}`).classList.add('active');
+      });
+    });
   }
 };
 

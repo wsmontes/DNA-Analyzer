@@ -82,130 +82,52 @@ document.addEventListener('DOMContentLoaded', () => {
       UIManager.updateStatusMessage(`Processed ${dnaData.length.toLocaleString()} SNPs`);
       Logger.info(`Processed ${dnaData.length} SNPs from file ${file.name}`);
       
-      // Check connection status before proceeding
-      APIDiagnostics.logToDebugPanel('Checking API connections before analysis...', 'info');
-      const apiStatus = await APIDiagnostics.checkAllConnections();
-      
-      // Initialize connection to external APIs
-      UIManager.updateProgress({ 
+      // Perform local analysis first without API calls
+      UIManager.updateProgress({
         loaded: 0,
-        total: 4,
-        stage: 'Establishing API connections...'
+        total: 2,
+        stage: 'Performing local analysis...'
       });
       
-      const proxyReady = await ProxyManager.initialize();
-      if (!proxyReady) {
-        UIManager.updateStatusMessage('Warning: Limited API connectivity');
-        APIDiagnostics.logToDebugPanel('Proxy initialization failed. Using direct connections.', 'warning');
-      } else {
-        UIManager.updateStatusMessage('API connections established');
-        APIDiagnostics.logToDebugPanel('Proxy initialized successfully.', 'success');
-      }
+      // Process data locally
+      const localResults = await DataManager.performLocalAnalysis(dnaData);
       
-      // Step 3: Comprehensive analysis of SNPs against SNPedia database
-      UIManager.updateProgress({ 
-        loaded: 1,
-        total: 4,
-        stage: 'Starting comprehensive analysis...'
-      });
-      
-      // Log a sample of the DNA data
-      Logger.debug('DNA data sample:', dnaData.slice(0, 3));
-      
-      const analysisResults = await FileProcessor.analyzeDnaData(dnaData, progress => {
-        UIManager.updateProgress({
-          ...progress,
-          total: progress.total || 'ongoing',
-          loaded: progress.loaded || 0
-        });
-        
-        // Also log progress to debug panel
-        if (progress.stage && progress.stage !== 'last-stage') {
-          APIDiagnostics.logToDebugPanel(progress.stage, 'info');
-          // Store last stage to avoid duplicate logs
-          window.lastStage = progress.stage;
-        }
-      });
-      
-      // Log analysis completion
-      Logger.info('DNA analysis complete with results:', {
-        snpCount: analysisResults.allResults.length,
-        clinicalFindings: Object.keys(analysisResults.clinCounts).map(k => 
-          `${k}: ${analysisResults.clinCounts[k]}`).join(', '),
-        traitCount: Object.keys(analysisResults.traitCounts).length,
-        error: analysisResults.error
-      });
-      
-      UIManager.updateProgress({ 
+      // Update UI with local results
+      UIManager.updateProgress({
         loaded: 2,
-        total: 4,
-        stage: 'Generating visualizations...'
+        total: 2,
+        stage: 'Local analysis complete'
       });
       
-      // Create charts
-      const genoChartCanvas = document.getElementById('genoChart');
-      ChartManager.createGenotypeChart(genoChartCanvas, dnaData);
-      
-      const chromChartCanvas = document.getElementById('chromChart');
-      ChartManager.createChromosomeDistributionChart(chromChartCanvas, dnaData);
-      
-      // Step 4: Move to gene discovery step automatically
-      UIManager.goToStep('discovery');
-      
-      UIManager.updateProgress({ 
-        loaded: 3,
-        total: 4,
-        stage: 'Discovering relevant genes...'
-      });
-      
-      // Initialize the gene discovery module with user data
-      GeneDiscovery.init(dnaData);
-      APIDiagnostics.logToDebugPanel('Gene discovery started...', 'info');
-      
-      // Discover relevant genes with progress reporting
-      const geneResults = await GeneDiscovery.discoverRelevantGenes(progress => {
-        UIManager.updateDiscoveryProgress(progress);
-        
-        // Log significant stages to debug panel
-        if (progress.stage && progress.stage.includes('complete') || 
-            progress.stage && progress.stage.includes('Found')) {
-          APIDiagnostics.logToDebugPanel(progress.stage, 'info');
-        }
-      });
-      
-      // Log gene discovery results
-      Logger.info('Gene discovery complete:', {
-        totalSnps: geneResults.stats?.totalFound || 0,
-        geneCount: geneResults.stats?.geneCount || 0,
-        error: geneResults.error
-      });
-      
-      if (geneResults.error) {
-        APIDiagnostics.logToDebugPanel(`Gene discovery error: ${geneResults.error}`, 'error');
-      } else {
-        APIDiagnostics.logToDebugPanel(
-          `Gene discovery found ${geneResults.stats?.totalFound || 0} SNPs in ${geneResults.stats?.geneCount || 0} genes`, 
-          'success'
-        );
-      }
-      
-      // Step 5: Store gene results and update the UI
-      DataManager.geneDiscoveryResults = geneResults;
-      
-      // Step 6: Move to results step and show the processed data
+      // Move to results step
       UIManager.goToStep('results');
-      UIManager.updateUI(analysisResults);
+      UIManager.hideLoading();
       
-      // Display gene results in the appropriate section
-      UIManager.displayGeneResults(geneResults);
+      // Update UI with local results
+      UIManager.updateUI(localResults);
       
-      // Show success message
-      UIManager.updateStatusMessage('Analysis complete - Explore your results');
+      // Make API analysis function available globally for the button
+      window.performApiAnalysis = async () => {
+        // Check connection status before proceeding
+        const apiStatus = await APIDiagnostics.checkAllConnections();
+        
+        // Initialize connection to external APIs
+        const proxyReady = await ProxyManager.initialize();
+        
+        if (!proxyReady) {
+          throw new Error('Limited API connectivity. Some features may not work properly.');
+        }
+        
+        // Perform extended analysis using APIs
+        const apiResults = await DataManager.performApiAnalysis(localResults.allResults);
+        
+        return apiResults;
+      };
       
     } catch (error) {
-      console.error("Error processing DNA:", error);
-      UIManager.showError(error.message);
-      APIDiagnostics.logToDebugPanel(`Error: ${error.message}`, 'error');
+      // Handle errors
+      console.error("Error processing file:", error);
+      UIManager.showError(error.message || 'An unexpected error occurred.');
     }
   });
 
