@@ -361,6 +361,143 @@ const SNPediaManager = {
       repute,
       categories
     };
+  },
+  
+  /**
+   * Get all SNPs matching specific criteria with continuation support
+   * @param {Object} options - Query options including criteria and callbacks
+   * @returns {Promise} Promise resolving to array of matching SNPs
+   */
+  getSnpsMatchingCriteria(options = {}) {
+    const { 
+      genes = [], // Array of gene symbols to match
+      categories = [], // Array of categories to match
+      limit = 100, // Default limit the number of results
+      progressCallback = null // Optional callback for progress updates
+    } = options;
+    
+    return new Promise((resolve, reject) => {
+      // Prepare SNPedia API query parameters using generators as recommended
+      let params = {
+        action: 'query',
+        generator: 'categorymembers',
+        gcmtitle: 'Category:Is_a_snp',
+        gcmlimit: 500, // Maximum per request
+        prop: 'revisions|templates',
+        rvprop: 'content',
+        rvslots: 'main',
+        formatversion: '2'
+      };
+      
+      let allResults = [];
+      let matchedCount = 0;
+      
+      // Helper function to process results using continuation
+      const processResults = (error, data) => {
+        if (error) return reject(error);
+        
+        // Process this batch of results
+        if (data.query && data.query.pages) {
+          const results = this.processSnpBatch(data.query.pages, { genes, categories });
+          
+          // Add matching SNPs to our collection
+          if (results.length > 0) {
+            allResults = [...allResults, ...results];
+            matchedCount = allResults.length;
+            
+            // Report progress if callback provided
+            if (progressCallback) {
+              progressCallback({
+                loaded: matchedCount,
+                matched: matchedCount,
+                total: data.continue ? 'continuing...' : matchedCount,
+                done: !data.continue || matchedCount >= limit
+              });
+            }
+          }
+          
+          // Check if we should continue or have reached the limit
+          if (data.continue && matchedCount < limit) {
+            // Use continuation parameters for next request
+            const nextParams = { ...params, ...data.continue };
+            this.queueRequest(nextParams, processResults);
+          } else {
+            // We're done - either no more results or reached limit
+            resolve(matchedCount < limit ? allResults : allResults.slice(0, limit));
+          }
+        } else {
+          resolve(allResults); // No results found
+        }
+      };
+      
+      // Start the first request
+      this.queueRequest(params, processResults);
+    });
+  },
+  
+  /**
+   * Process a batch of SNP pages and filter by criteria
+   * @param {Array} pages - Pages returned from the API
+   * @param {Object} criteria - Filter criteria (genes, categories)
+   * @returns {Array} Matching SNP data
+   */
+  processSnpBatch(pages, criteria) {
+    const { genes = [], categories = [] } = criteria;
+    const results = [];
+    
+    for (const page of pages) {
+      // Skip missing pages
+      if (page.missing) continue;
+      
+      // Extract SNP ID
+      const rsid = page.title;
+      
+      // Extract content
+      let content = '';
+      if (page.revisions && page.revisions.length) {
+        const revision = page.revisions[0];
+        if (revision.slots && revision.slots.main) {
+          content = revision.slots.main.content || '';
+        }
+      }
+      
+      // Extract gene
+      let gene = null;
+      const geneMatch = content.match(/\|\s*gene\s*=\s*([A-Za-z0-9]+)/);
+      if (geneMatch && geneMatch[1]) {
+        gene = geneMatch[1].toUpperCase();
+      }
+      
+      // Extract magnitude
+      let magnitude = null;
+      const magnitudeMatch = content.match(/\|\s*magnitude\s*=\s*([+-\.\d]+)/);
+      if (magnitudeMatch && magnitudeMatch[1]) {
+        magnitude = parseFloat(magnitudeMatch[1]);
+      }
+      
+      // Apply filters
+      let matchesFilter = true;
+      
+      // Filter by genes if specified
+      if (genes.length > 0 && gene) {
+        matchesFilter = genes.some(g => 
+          gene === g || gene.includes(g) || g.includes(gene)
+        );
+      }
+      
+      // If it doesn't match the criteria, skip it
+      if (!matchesFilter) continue;
+      
+      // Extract SNP data and add to results
+      results.push({
+        rsid,
+        gene,
+        magnitude,
+        content: this.extractSummary(content)
+      });
+    }
+    
+    return results;
   }
 };
 

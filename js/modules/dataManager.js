@@ -1,10 +1,11 @@
 /**
  * DataManager
  * 
- * Updated to use improved SNPediaManager with continuation
+ * Updated to prioritize genes and implement bulk querying
  */
 import ProxyManager from './proxyManager.js';
 import SNPediaManager from './snpediaManager.js';
+import GenePrioritizer from './genePrioritizer.js';
 
 const DataManager = {
   snpCache: new Map(),
@@ -193,6 +194,75 @@ const DataManager = {
     } catch (err) {
       console.error("Error getting relevant SNPedia data:", err);
       return {};
+    }
+  },
+
+  /**
+   * Get SNPs associated with high-priority genes
+   * @param {Function} progressCallback - Progress reporting callback
+   * @returns {Promise<Array>} Array of prioritized SNPs
+   */
+  async getPrioritizedGeneSNPs(progressCallback) {
+    try {
+      if (progressCallback) {
+        progressCallback({
+          stage: 'Starting gene prioritization',
+          loaded: 0,
+          total: GenePrioritizer.highPriorityGenes.length
+        });
+      }
+      
+      // Get SNPs for high-priority genes using SNPedia bulk API
+      const prioritizedSNPs = await SNPediaManager.getSnpsMatchingCriteria({
+        genes: GenePrioritizer.highPriorityGenes,
+        limit: 500,  // Limit to 500 most relevant SNPs
+        progressCallback
+      });
+      
+      // Find overlap with user's SNPs
+      const userSnpMap = new Map(this.allResults.map(snp => [snp.rsid, snp]));
+      
+      // Match user's SNPs with the prioritized SNPs
+      const matchedSNPs = prioritizedSNPs.filter(snp => userSnpMap.has(snp.rsid))
+        .map(snp => ({
+          ...snp,
+          userGenotype: userSnpMap.get(snp.rsid).Genotype,
+          category: GenePrioritizer.getCategory(snp.gene),
+          description: GenePrioritizer.getDescription(snp.gene)
+        }));
+      
+      // Group by gene category
+      const categorizedSNPs = GenePrioritizer.groupByCategory(matchedSNPs);
+      
+      if (progressCallback) {
+        progressCallback({
+          stage: 'Gene prioritization complete',
+          loaded: matchedSNPs.length,
+          total: matchedSNPs.length,
+          done: true
+        });
+      }
+      
+      return {
+        prioritizedSNPs: matchedSNPs,
+        categorizedSNPs,
+        stats: {
+          total: matchedSNPs.length,
+          categories: Object.keys(categorizedSNPs).reduce((acc, category) => {
+            acc[category] = categorizedSNPs[category].length;
+            return acc;
+          }, {})
+        }
+      };
+      
+    } catch (err) {
+      console.error("Error prioritizing gene SNPs:", err);
+      return {
+        prioritizedSNPs: [],
+        categorizedSNPs: {},
+        stats: { total: 0, categories: {} },
+        error: err.message
+      };
     }
   }
 };

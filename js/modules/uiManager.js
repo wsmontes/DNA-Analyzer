@@ -452,6 +452,116 @@ const UIManager = {
     `;
   },
 
+  /**
+   * Display prioritized gene analysis
+   * @param {Object} data - Prioritized gene data
+   */
+  displayPrioritizedGeneAnalysis(data) {
+    const { prioritizedSNPs, categorizedSNPs, stats } = data;
+    
+    if (prioritizedSNPs.length === 0) {
+      this.elements.geneAnalysisEl.innerHTML = `
+        <div class="info-panel">
+          <h3>Gene Analysis</h3>
+          <p>No matches found for medically significant genes in your DNA data.</p>
+        </div>
+      `;
+      return;
+    }
+    
+    // Create gene analysis section
+    let html = `
+      <div class="section-header">
+        <h2 class="section-title">Gene Analysis</h2>
+        <div>
+          <span class="badge">${stats.total} matches</span>
+        </div>
+      </div>
+      
+      <div class="gene-stats">
+        <h3>SNPs by Category</h3>
+        <div class="category-stats">
+    `;
+    
+    // Add category stats
+    Object.entries(stats.categories).forEach(([category, count]) => {
+      html += `
+        <div class="category-stat">
+          <div class="category-name">${category}</div>
+          <div class="category-count">${count}</div>
+        </div>
+      `;
+    });
+    
+    html += `
+        </div>
+      </div>
+      
+      <div class="gene-categories">
+    `;
+    
+    // Add categorized SNPs
+    Object.entries(categorizedSNPs).forEach(([category, snps]) => {
+      if (snps.length === 0) return;
+      
+      html += `
+        <div class="gene-category">
+          <h3>${category} (${snps.length})</h3>
+          <table class="gene-table">
+            <thead>
+              <tr>
+                <th>SNP</th>
+                <th>Gene</th>
+                <th>Your Genotype</th>
+                <th>Magnitude</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      snps.forEach(snp => {
+        const magnitudeClass = snp.magnitude > 3 ? 'high-magnitude' : 
+                             snp.magnitude > 1 ? 'medium-magnitude' : 'low-magnitude';
+        
+        html += `
+          <tr>
+            <td><span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span></td>
+            <td>${snp.gene || '-'}</td>
+            <td>${snp.userGenotype || '-'}</td>
+            <td><span class="magnitude ${magnitudeClass}">${snp.magnitude || '-'}</span></td>
+            <td>${snp.description || 'No description available'}</td>
+          </tr>
+        `;
+      });
+      
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+    
+    html += `
+      </div>
+      <div class="info-panel">
+        <p>
+          <strong>Note:</strong> This analysis prioritizes SNPs associated with medically significant genes.
+          Magnitude values represent the potential medical significance according to SNPedia (0-10 scale).
+        </p>
+      </div>
+    `;
+    
+    // Display the gene analysis
+    this.elements.geneAnalysisEl.innerHTML = html;
+    this.elements.geneAnalysisEl.style.display = 'block';
+    
+    // Add click handlers to SNP links
+    this.elements.geneAnalysisEl.querySelectorAll('.snp-link').forEach(link => {
+      link.addEventListener('click', () => this.fetchDetails(link.dataset.rsid));
+    });
+  },
+
   // Exibir mensagem de erro
   showError(errorMessage) {
     this.resetUI();

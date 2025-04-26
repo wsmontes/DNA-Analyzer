@@ -147,6 +147,67 @@ document.addEventListener('DOMContentLoaded', () => {
     const detailsEl = document.getElementById('details');
     container.insertBefore(section, detailsEl);
   }
+
+  // Add Gene Analysis button to the UI
+  function addGeneAnalysisButton() {
+    const dataSection = document.getElementById('dataSection');
+    if (!dataSection) return;
+    
+    // Create container for gene analysis section
+    const geneAnalysisSection = document.createElement('section');
+    geneAnalysisSection.id = 'geneAnalysisSection';
+    geneAnalysisSection.className = 'section';
+    geneAnalysisSection.style.display = 'none';
+    document.querySelector('main.container').insertBefore(geneAnalysisSection, document.getElementById('details'));
+    
+    // Store reference in the UI manager
+    UIManager.elements.geneAnalysisEl = geneAnalysisSection;
+    
+    // Add button to data section
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'action-buttons';
+    btnContainer.style.marginTop = '20px';
+    btnContainer.style.textAlign = 'center';
+    
+    const geneAnalysisBtn = document.createElement('button');
+    geneAnalysisBtn.className = 'btn btn-primary';
+    geneAnalysisBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+        <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
+      </svg>
+      Prioritized Gene Analysis
+    `;
+    
+    geneAnalysisBtn.addEventListener('click', async () => {
+      UIManager.showLoading('Starting gene prioritization analysis...');
+      
+      try {
+        // Run gene prioritization analysis
+        const prioritizedData = await DataManager.getPrioritizedGeneSNPs(progress => {
+          UIManager.updateProgress(progress);
+        });
+        
+        // Display the results
+        UIManager.displayPrioritizedGeneAnalysis(prioritizedData);
+        
+        // Scroll to the results
+        document.getElementById('geneAnalysisSection').scrollIntoView({ behavior: 'smooth' });
+        
+      } catch (error) {
+        console.error("Error in gene prioritization:", error);
+        UIManager.showError("Failed to complete gene prioritization: " + error.message);
+      } finally {
+        UIManager.hideLoading();
+      }
+    });
+    
+    btnContainer.appendChild(geneAnalysisBtn);
+    dataSection.appendChild(btnContainer);
+  }
+
+  // Call this during initialization after the UI is setup
+  addGeneAnalysisButton();
 });
 
 // Função para adicionar atribuição do SNPedia
