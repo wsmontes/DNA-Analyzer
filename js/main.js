@@ -1,7 +1,7 @@
 /**
  * DNA Explorer - Main Application
  * 
- * Automated workflow with step-by-step guidance
+ * Automated workflow with comprehensive analysis
  */
 
 import ProxyManager from './modules/proxyManager.js';
@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   UIManager.init();
   ChartManager.init();
   DataManager.init();
+  SNPediaManager.init();
 
   // Initialize the ProxyManager in the background
   ProxyManager.initialize();
@@ -45,53 +46,63 @@ document.addEventListener('DOMContentLoaded', () => {
       UIManager.goToStep('processing');
       
       // Step 2: Process DNA file
-      UIManager.showLoading('Reading DNA file...');
+      UIManager.showLoading('Lendo arquivo de DNA...');
       const dnaData = await FileProcessor.processDnaFile(file);
       
       // Update status with initial counts
-      UIManager.updateStatusMessage(`Processed ${dnaData.length.toLocaleString()} SNPs`);
+      UIManager.updateStatusMessage(`Processados ${dnaData.length.toLocaleString()} SNPs`);
       
       // Initialize connection to external APIs
       UIManager.updateProgress({ 
         loaded: 0,
-        total: 3,
-        stage: 'Establishing API connections...'
+        total: 4,
+        stage: 'Estabelecendo conexões com APIs...'
       });
       
       const proxyReady = await ProxyManager.initialize();
       if (!proxyReady) {
-        UIManager.updateStatusMessage('Warning: Limited API connectivity');
+        UIManager.updateStatusMessage('Aviso: Conectividade de API limitada');
       } else {
-        UIManager.updateStatusMessage('API connections established');
+        UIManager.updateStatusMessage('Conexões com APIs estabelecidas');
       }
       
-      // Step 3: Initial analysis of sample SNPs
+      // Step 3: Comprehensive analysis of SNPs against SNPedia database
       UIManager.updateProgress({ 
         loaded: 1,
-        total: 3,
-        stage: 'Analyzing sample SNPs...'
+        total: 4,
+        stage: 'Iniciando análise abrangente...'
       });
       
-      const analysisResults = await FileProcessor.analyzeDnaData(dnaData);
+      const analysisResults = await FileProcessor.analyzeDnaData(dnaData, progress => {
+        UIManager.updateProgress({
+          ...progress,
+          total: progress.total || 'continua',
+          loaded: progress.loaded || 0
+        });
+      });
       
-      // Step 4: Generate charts
       UIManager.updateProgress({ 
         loaded: 2,
-        total: 3,
-        stage: 'Generating visualization...'
+        total: 4,
+        stage: 'Gerando visualizações...'
       });
       
-      // Create charts (will be displayed when that section is viewed)
+      // Create charts
       const genoChartCanvas = document.getElementById('genoChart');
       ChartManager.createGenotypeChart(genoChartCanvas, dnaData);
       
       const chromChartCanvas = document.getElementById('chromChart');
       ChartManager.createChromosomeDistributionChart(chromChartCanvas, dnaData);
       
-      // Step 5: Move to gene discovery step automatically
+      // Step 4: Move to gene discovery step automatically
       UIManager.goToStep('discovery');
       
-      // Step 6: Run gene discovery
+      UIManager.updateProgress({ 
+        loaded: 3,
+        total: 4,
+        stage: 'Descobrindo genes relevantes...'
+      });
+      
       // Initialize the gene discovery module with user data
       GeneDiscovery.init(dnaData);
       
@@ -100,10 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
         UIManager.updateDiscoveryProgress(progress);
       });
       
-      // Step 7: Store gene results and update the UI
+      // Step 5: Store gene results and update the UI
       DataManager.geneDiscoveryResults = geneResults;
       
-      // Step 8: Move to results step and show the processed data
+      // Step 6: Move to results step and show the processed data
       UIManager.goToStep('results');
       UIManager.updateUI(analysisResults);
       
@@ -111,10 +122,10 @@ document.addEventListener('DOMContentLoaded', () => {
       UIManager.displayGeneResults(geneResults);
       
       // Show success message
-      UIManager.updateStatusMessage('Analysis complete - Explore your results');
+      UIManager.updateStatusMessage('Análise completa - Explore seus resultados');
       
     } catch (error) {
-      console.error("Error processing DNA:", error);
+      console.error("Erro ao processar DNA:", error);
       UIManager.showError(error.message);
     }
   });
@@ -124,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await UIManager.fetchDetails(rsid);
   };
   
-  console.log('DNA Explorer successfully initialized!');
+  console.log('DNA Explorer inicializado com sucesso!');
 });
 
 // Function to add SNPedia attribution

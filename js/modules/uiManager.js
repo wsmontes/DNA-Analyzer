@@ -323,7 +323,16 @@ const UIManager = {
 
   // Update UI after analysis
   updateUI(data) {
-    const { allResults, clinCounts, traitCounts, ancestryHints, clinSummary, traitSummary, topInsights } = data;
+    const { 
+      allResults, 
+      clinCounts, 
+      traitCounts, 
+      ancestryHints, 
+      clinSummary, 
+      traitSummary, 
+      topInsights,
+      significantMatches 
+    } = data;
     
     // Create dashboard summary
     if (this.elements.dashboardEl) {
@@ -332,17 +341,17 @@ const UIManager = {
           <div class="number">${allResults.length.toLocaleString()}</div>
           <div class="label">Total SNPs</div>
         </div>
-        <div class="dashboard-card">
+        <div class="dashboard-card ${(clinCounts.pathogenic + clinCounts.likely_pathogenic) > 0 ? 'highlight' : ''}">
           <div class="number">${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</div>
-          <div class="label">Potentially Pathogenic</div>
+          <div class="label">Potencialmente Patogênico</div>
         </div>
         <div class="dashboard-card">
           <div class="number">${Object.keys(traitCounts).length}</div>
-          <div class="label">Traits/Phenotypes</div>
+          <div class="label">Traços/Fenótipos</div>
         </div>
-        <div class="dashboard-card">
-          <div class="number">${ancestryHints}</div>
-          <div class="label">Ancestry Markers</div>
+        <div class="dashboard-card ${significantMatches?.count > 0 ? 'highlight' : ''}">
+          <div class="number">${significantMatches?.count || 0}</div>
+          <div class="label">SNPs Significativos</div>
         </div>
       `;
     }
@@ -350,11 +359,11 @@ const UIManager = {
     // Update sidebar summary
     if (this.elements.sidebarSummary) {
       this.elements.sidebarSummary.innerHTML = `
-        <h3>Analysis Summary</h3>
+        <h3>Resumo da Análise</h3>
         <div class="summary-stats">
-          <p><strong>${allResults.length.toLocaleString()}</strong> SNPs analyzed</p>
-          <p><strong>${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</strong> potentially pathogenic variants</p>
-          <p><strong>${Object.keys(traitCounts).length}</strong> traits/phenotypes identified</p>
+          <p><strong>${allResults.length.toLocaleString()}</strong> SNPs analisados</p>
+          <p><strong>${significantMatches?.count || 0}</strong> SNPs significativos encontrados</p>
+          <p><strong>${(clinCounts.pathogenic + clinCounts.likely_pathogenic)}</strong> potencialmente patogênicos</p>
         </div>
       `;
     }
@@ -365,10 +374,28 @@ const UIManager = {
         <div class="insights-container">
           ${topInsights.length ? 
             topInsights.map(i => `<div class="insight-item">${i}</div>`).join('') : 
-            '<div class="insight-item">No high priority findings in the first 50 SNPs.</div>'}
-          <div class="info-note">
-            (Click on any SNP in the table for detailed information)
-          </div>
+            '<div class="insight-item">Nenhuma descoberta importante encontrada em seu DNA.</div>'}
+          
+          ${significantMatches && significantMatches.count > 0 ? `
+            <div class="significant-snps">
+              <h3>SNPs Significativos (Top ${Math.min(10, significantMatches.count)})</h3>
+              <div class="significant-grid">
+                ${significantMatches.items
+                  .sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0))
+                  .slice(0, 10)
+                  .map(snp => `
+                    <div class="significant-card">
+                      <div class="significant-rsid">
+                        <span class="snp-link" data-rsid="${snp.rsid}">${snp.rsid}</span>
+                      </div>
+                      <div class="magnitude-badge">
+                        Magnitude: ${snp.magnitude || 'N/A'}
+                      </div>
+                      <div class="category-tag">${snp.category || 'Não categorizado'}</div>
+                    </div>
+                  `).join('')}
+              </div>
+            </div>` : ''}
         </div>
       `;
     }
@@ -377,31 +404,41 @@ const UIManager = {
     if (this.elements.traitsEl) {
       let traitHtml = '';
       if (traitSummary.length) {
-        traitHtml += `<h3>Health & Traits</h3>`;
+        traitHtml += `<h3>Saúde & Traços</h3>`;
         traitHtml += `<table>
           <thead>
             <tr>
               <th>rsID</th>
               <th>Gene</th>
-              <th>Traits</th>
-              <th>Phenotypes</th>
+              <th>Traços</th>
+              <th>Fenótipos</th>
+              <th>Magnitude</th>
             </tr>
           </thead>
           <tbody>`;
         
-        for (const t of traitSummary) {
+        // Sort by magnitude (if available)
+        const sortedTraits = [...traitSummary].sort((a, b) => {
+          return (b.magnitude || 0) - (a.magnitude || 0);
+        });
+        
+        for (const t of sortedTraits) {
+          const magnitudeClass = t.magnitude >= 7 ? 'high-magnitude' : 
+                               t.magnitude >= 4 ? 'medium-magnitude' : 'low-magnitude';
+          
           traitHtml += `
             <tr>
               <td><span class="snp-link" data-rsid="${t.rsid}">${t.rsid}</span></td>
               <td>${t.gene}</td>
               <td>${t.traits.map(tr => `<span class="trait-keyword">${tr}</span>`).join('')}</td>
               <td>${t.phenotypes.map(p => p.description).join('; ')}</td>
+              <td><span class="magnitude ${magnitudeClass}">${t.magnitude || '-'}</span></td>
             </tr>`;
         }
         
         traitHtml += `</tbody></table>`;
       } else {
-        traitHtml = `<div class="info-note">No trait/phenotype associations found in the first 50 SNPs.</div>`;
+        traitHtml = `<div class="info-note">Nenhuma associação de traço/fenótipo encontrada.</div>`;
       }
       
       this.elements.traitsEl.innerHTML = traitHtml;

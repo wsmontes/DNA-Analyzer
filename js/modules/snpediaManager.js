@@ -443,18 +443,16 @@ const SNPediaManager = {
   async getHighMagnitudeSNPs(options = {}) {
     const { progressCallback } = options;
     
-    // Initial query to get magnitude data
+    // We'll fetch SNPs by magnitude category, starting with highest
     try {
       let highMagnitudeSNPs = [];
-      let currentProgress = 0;
       
-      // First query for "Category:Magnitude 10" (most important)
+      // First get the most significant SNPs (magnitude 10)
       const magnitude10 = await this.getSnpsInCategory("Category:Magnitude_10", {
         progressCallback: (progress) => {
           if (progressCallback) {
-            currentProgress = progress.progress || 0;
             progressCallback({
-              progress: currentProgress * 0.25, // 25% of total progress
+              progress: progress.progress || 0,
               found: progress.found || 0,
               stage: "Fetching magnitude 10 SNPs"
             });
@@ -463,50 +461,21 @@ const SNPediaManager = {
       });
       highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude10];
       
-      // Next Magnitude 9
-      const magnitude9 = await this.getSnpsInCategory("Category:Magnitude_9", {
-        progressCallback: (progress) => {
-          if (progressCallback) {
-            currentProgress = progress.progress || 0;
-            progressCallback({
-              progress: 0.25 + currentProgress * 0.25, // 25%-50% of total progress
-              found: highMagnitudeSNPs.length + (progress.found || 0),
-              stage: "Fetching magnitude 9 SNPs"
-            });
+      // Next get magnitude 9, 8, and 7 SNPs
+      for (const magnitude of [9, 8, 7]) {
+        const additionalSnps = await this.getSnpsInCategory(`Category:Magnitude_${magnitude}`, {
+          progressCallback: (progress) => {
+            if (progressCallback) {
+              progressCallback({
+                progress: progress.progress || 0,
+                found: highMagnitudeSNPs.length + (progress.found || 0),
+                stage: `Fetching magnitude ${magnitude} SNPs`
+              });
+            }
           }
-        }
-      });
-      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude9];
-      
-      // Next Magnitude 8
-      const magnitude8 = await this.getSnpsInCategory("Category:Magnitude_8", {
-        progressCallback: (progress) => {
-          if (progressCallback) {
-            currentProgress = progress.progress || 0;
-            progressCallback({
-              progress: 0.5 + currentProgress * 0.25, // 50%-75% of total progress
-              found: highMagnitudeSNPs.length + (progress.found || 0),
-              stage: "Fetching magnitude 8 SNPs"
-            });
-          }
-        }
-      });
-      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude8];
-      
-      // Next Magnitude 7
-      const magnitude7 = await this.getSnpsInCategory("Category:Magnitude_7", {
-        progressCallback: (progress) => {
-          if (progressCallback) {
-            currentProgress = progress.progress || 0;
-            progressCallback({
-              progress: 0.75 + currentProgress * 0.25, // 75%-100% of total progress
-              found: highMagnitudeSNPs.length + (progress.found || 0),
-              stage: "Fetching magnitude 7 SNPs"
-            });
-          }
-        }
-      });
-      highMagnitudeSNPs = [...highMagnitudeSNPs, ...magnitude7];
+        });
+        highMagnitudeSNPs = [...highMagnitudeSNPs, ...additionalSnps];
+      }
       
       return highMagnitudeSNPs;
     } catch (error) {
@@ -516,9 +485,9 @@ const SNPediaManager = {
   },
   
   /**
-   * Get all SNPs in a specific SNPedia category
-   * @param {String} category - Category name (e.g., "Category:Magnitude_10")
-   * @param {Object} options - Options including progressCallback
+   * Get all SNPs in a specific SNPedia category (e.g. Magnitude_10)
+   * @param {String} category - Category name
+   * @param {Object} options - Options
    * @returns {Promise<Array>} Array of SNPs in that category
    */
   async getSnpsInCategory(category, options = {}) {
@@ -534,13 +503,13 @@ const SNPediaManager = {
         formatversion: '2'
       };
       
-      // Helper to process results with continuation
+      // Process results with continuation support
       const processResults = (error, data) => {
         if (error) return reject(error);
         
         // Extract SNPs from this batch
         if (data.query && data.query.categorymembers) {
-          // Filter out non-SNP entries (keep only rsIDs)
+          // Filter to keep only rsIDs
           const snps = data.query.categorymembers
             .filter(item => item.title.match(/^rs\d+$/i))
             .map(item => ({
@@ -551,26 +520,25 @@ const SNPediaManager = {
           
           allSNPs = [...allSNPs, ...snps];
           
-          // Report progress if callback provided
+          // Report progress
           if (progressCallback) {
             progressCallback({
               found: allSNPs.length,
-              progress: data.continue ? 0.5 : 1, // Estimate progress
+              progress: data.continue ? 0.5 : 1,
               done: !data.continue
             });
           }
           
-          // Check if we need to continue
+          // Continue if there are more results
           if (data.continue) {
-            // Use continuation parameters for next request
             const nextParams = { ...params, ...data.continue };
             this.queueRequest(nextParams, processResults);
           } else {
-            // We're done
+            // Done
             resolve(allSNPs);
           }
         } else {
-          resolve(allSNPs); // No results found
+          resolve(allSNPs);
         }
       };
       
