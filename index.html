@@ -1,186 +1,177 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DNA Explorer</title>
+  <title>DNA Analysis Tool</title>
   <link rel="stylesheet" href="css/styles.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <header>
-    <div class="container header-content">
-      <a href="#" class="logo">
-        <span>DNA</span>
-        <h1>DNA Explorer</h1>
-      </a>
-      <div id="status-indicator"></div>
-    </div>
+    <h1>DNA Analysis Tool</h1>
+    <p class="subtitle">Upload your MyHeritage DNA data for clinical annotation</p>
   </header>
 
-  <div class="app-container">
-    <aside id="sidebar" class="sidebar">
-      <div class="workflow-steps">
-        <div class="step active" id="step-upload">
-          <div class="step-number">1</div>
-          <div class="step-content">
-            <h3>Upload DNA</h3>
-            <p>Upload your DNA file to begin</p>
+  <main>
+    <section id="upload-section" class="panel">
+      <h2>Upload DNA Data</h2>
+      <p>Select your compressed MyHeritage raw DNA file (.zip or .gz)</p>
+      
+      <div class="upload-container">
+        <input type="file" id="dna-file" accept=".zip,.gz" />
+        <button id="upload-btn" class="primary-btn">Analyze DNA</button>
+      </div>
+
+      <div id="progress-container" class="hidden">
+        <div class="progress-step">
+          <span class="step-label">Decompressing</span>
+          <div class="progress-bar-container">
+            <div id="decompress-progress" class="progress-bar"></div>
           </div>
+          <span id="decompress-status" class="status"></span>
         </div>
-        <div class="step" id="step-processing">
-          <div class="step-number">2</div>
-          <div class="step-content">
-            <h3>Processing</h3>
-            <p>Parsing and analyzing DNA data</p>
+        
+        <div class="progress-step">
+          <span class="step-label">Parsing</span>
+          <div class="progress-bar-container">
+            <div id="parse-progress" class="progress-bar"></div>
           </div>
+          <span id="parse-status" class="status"></span>
         </div>
-        <div class="step" id="step-discovery">
-          <div class="step-number">3</div>
-          <div class="step-content">
-            <h3>Gene Discovery</h3>
-            <p>Finding relevant genes in your DNA</p>
+        
+        <div class="progress-step">
+          <span class="step-label">Loading ClinVar</span>
+          <div class="progress-bar-container">
+            <div id="clinvar-progress" class="progress-bar"></div>
           </div>
+          <span id="clinvar-status" class="status"></span>
         </div>
-        <div class="step" id="step-results">
-          <div class="step-number">4</div>
-          <div class="step-content">
-            <h3>Analysis Results</h3>
-            <p>Exploring your DNA analysis</p>
+        
+        <div class="progress-step">
+          <span class="step-label">Annotating</span>
+          <div class="progress-bar-container">
+            <div id="annotate-progress" class="progress-bar"></div>
           </div>
+          <span id="annotate-status" class="status"></span>
+        </div>
+      </div>
+    </section>
+
+    <section id="summary-section" class="panel hidden">
+      <h2>Clinical Summary</h2>
+      <button id="summary-toggle" class="toggle-btn">Hide Summary</button>
+      <div id="summary-content">
+        <div id="ai-loading" class="loading-indicator">
+          <span>Generating clinical interpretation...</span>
+          <div class="spinner"></div>
+        </div>
+        <div id="ai-summary" class="summary-text"></div>
+      </div>
+    </section>
+
+    <section id="browser-section" class="panel hidden">
+      <h2>Genome Browser</h2>
+      <div class="browser-controls">
+        <select id="chromosome-select">
+          <option value="all">All Chromosomes</option>
+          <option value="1">Chromosome 1</option>
+          <option value="2">Chromosome 2</option>
+          <!-- More chromosomes will be added dynamically -->
+        </select>
+        <div class="zoom-controls">
+          <button id="zoom-in" title="Zoom In">+</button>
+          <button id="zoom-out" title="Zoom Out">-</button>
+          <button id="zoom-reset" title="Reset View">↺</button>
+        </div>
+      </div>
+      <div id="genome-browser-container">
+        <canvas id="genome-browser" width="1000" height="200"></canvas>
+      </div>
+    </section>
+
+    <section id="results-section" class="panel hidden">
+      <h2>Annotated Variants</h2>
+      
+      <div class="filter-controls">
+        <div class="filter-group">
+          <label for="significance-filter">Clinical Significance:</label>
+          <select id="significance-filter">
+            <option value="all">All</option>
+            <option value="pathogenic">Pathogenic</option>
+            <option value="likely_pathogenic">Likely Pathogenic</option>
+            <option value="uncertain_significance">Uncertain Significance</option>
+            <option value="likely_benign">Likely Benign</option>
+            <option value="benign">Benign</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="chromosome-filter">Chromosome:</label>
+          <select id="chromosome-filter">
+            <option value="all">All</option>
+            <!-- Chromosomes will be populated dynamically -->
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="search-input">Search:</label>
+          <input type="text" id="search-input" placeholder="rsID, gene name...">
         </div>
       </div>
       
-      <div id="sidebar-summary" class="sidebar-summary">
-        <!-- Summary stats will appear here after processing -->
+      <div id="results-table-container">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th data-sort="rsid">rsID</th>
+              <th data-sort="chrom">Chr</th>
+              <th data-sort="pos">Position</th>
+              <th data-sort="genotype">Genotype</th>
+              <th data-sort="gene">Gene</th>
+              <th data-sort="significance">Clinical Significance</th>
+              <th data-sort="condition">Condition</th>
+              <th>Links</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
       </div>
-    </aside>
-
-    <main class="main-content">
-      <div id="step-content-upload" class="step-content-panel active">
-        <div class="upload-area" id="uploadArea">
-          <h2>Upload Your DNA Data</h2>
-          <p>Upload your MyHeritage DNA ZIP file to begin automatic analysis</p>
-          <div class="file-input-wrapper">
-            <button class="btn btn-primary">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-              </svg>
-              Select DNA File
-            </button>
-            <input type="file" id="fileInput" accept=".zip" class="file-input" />
-          </div>
-        </div>
+      
+      <div id="pagination-controls">
+        <button id="prev-page" disabled>Previous</button>
+        <span id="page-indicator">Page 1 of 1</span>
+        <button id="next-page" disabled>Next</button>
+        <select id="page-size">
+          <option value="20">20 per page</option>
+          <option value="50">50 per page</option>
+          <option value="100">100 per page</option>
+        </select>
       </div>
+    </section>
 
-      <div id="step-content-processing" class="step-content-panel">
-        <div id="processing-panel" class="analysis-panel">
-          <h2>Processing DNA Data</h2>
-          <div id="loading" class="analysis-progress">
-            <span class="spinner"></span>
-            <div class="progress-message">Initializing DNA analysis...</div>
-          </div>
-        </div>
-      </div>
+    <section id="error-section" class="panel hidden">
+      <h2>Error</h2>
+      <div id="error-message" class="error-box"></div>
+      <button id="error-dismiss" class="secondary-btn">Dismiss</button>
+    </section>
+  </main>
 
-      <div id="step-content-discovery" class="step-content-panel">
-        <div id="discovery-panel" class="analysis-panel">
-          <h2>Discovering Relevant Genes</h2>
-          <div id="discovery-progress" class="analysis-progress">
-            <span class="spinner"></span>
-            <div class="progress-message">Identifying significant genes...</div>
-          </div>
-        </div>
-      </div>
-
-      <div id="step-content-results" class="step-content-panel">
-        <div class="results-container">
-          <div class="section-tabs">
-            <button class="section-tab active" data-section="insights">Key Insights</button>
-            <button class="section-tab" data-section="genes">Gene Analysis</button>
-            <button class="section-tab" data-section="snps">SNP Data</button>
-            <button class="section-tab" data-section="charts">Charts</button>
-          </div>
-
-          <!-- Insights Section -->
-          <div id="insights-section" class="result-section active">
-            <div id="dashboard" class="dashboard-grid"></div>
-            <div class="collapsible-section open">
-              <div class="collapsible-header">
-                <h2>Key Insights</h2>
-                <button class="toggle-btn"><span class="arrow">▼</span></button>
-              </div>
-              <div class="collapsible-content">
-                <div id="insights"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Gene Analysis Section -->
-          <div id="genes-section" class="result-section">
-            <div id="genes"></div>
-          </div>
-
-          <!-- SNP Data Section -->
-          <div id="snps-section" class="result-section">
-            <div class="filters">
-              <input type="text" id="searchInput" placeholder="Search by rsID..." class="search-input" />
-              <select id="chromFilter">
-                <option value="">All chromosomes</option>
-              </select>
-              <button id="downloadBtn" class="btn btn-outline">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-                </svg>
-                Download Report
-              </button>
-            </div>
-            <div id="table"></div>
-            <div id="pagination" class="pagination"></div>
-            <div id="traits" class="traits-panel"></div>
-          </div>
-
-          <!-- Charts Section -->
-          <div id="charts-section" class="result-section">
-            <div class="chart-grid">
-              <div class="chart-container">
-                <h3>Distribution of Genotypes</h3>
-                <canvas id="genoChart" width="600" height="300"></canvas>
-              </div>
-              <div class="chart-container">
-                <h3>SNPs by Chromosome</h3>
-                <canvas id="chromChart" width="600" height="300"></canvas>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <div id="details" class="details-panel">
-      <div class="details-header">
-        <h3>SNP Details</h3>
-        <button id="close-details" class="btn-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-          </svg>
-        </button>
-      </div>
-      <div class="details-content"></div>
-    </div>
-  </div>
-
-  <footer id="status-footer" class="status-footer">
-    <div class="status-message">Ready to analyze DNA data</div>
-    <div class="action-buttons">
-      <button id="restart-btn" class="btn btn-sm btn-outline">Restart Analysis</button>
-    </div>
+  <footer>
+    <p>DNA Analysis Tool - Client-side genomic analysis application</p>
+    <p><small>Processes data locally in your browser. No data sent to servers.</small></p>
   </footer>
 
+  <!-- Load libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  
+  <!-- Load application modules -->
   <script type="module" src="js/main.js"></script>
+
+  <noscript>
+    <div class="noscript-message">
+      This application requires JavaScript to run.
+    </div>
+  </noscript>
 </body>
 </html>
