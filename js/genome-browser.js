@@ -1,7 +1,18 @@
 /**
- * Define the lengths of chromosomes in the human genome (GRCh37/hg19)
+ * Genome Browser Module
+ * 
+ * Provides visualization of genomic variants on an interactive canvas.
+ * 
+ * Dependencies:
+ * - None (standalone module)
+ * 
+ * Exports:
+ * - initGenomeBrowser: Initialize the genome browser with variants
+ * - updateGenomeBrowser: Update the browser with filtered variants
  */
-const chromosomeLengths = {
+
+// Chromosome sizes in base pairs (GRCh37/hg19)
+const chromosomeSizes = {
   '1': 249250621,
   '2': 243199373,
   '3': 198022430,
@@ -85,6 +96,42 @@ export function initGenomeBrowser(variants) {
 }
 
 /**
+ * Update the genome browser with filtered variants
+ * @param {Array} variants - All variants
+ * @param {Object} filters - Filter settings to apply
+ */
+export function updateGenomeBrowser(variants, filters) {
+  if (!browserState.canvas || !variants) return;
+  
+  // Apply filters similar to the table filters
+  browserState.variants = variants;
+  
+  // Update chromosome selection if it doesn't match the filter
+  if (filters.chromosome !== 'all' && 
+      browserState.selectedChromosome !== filters.chromosome) {
+    browserState.selectedChromosome = filters.chromosome;
+  }
+  
+  // Debug logging to identify potential issues
+  console.log(`Updating genome browser with ${variants.length} variants`);
+  console.log(`Selected chromosome: ${browserState.selectedChromosome}`);
+  
+  // Count variants with significant data for debugging
+  const annotatedCount = variants.filter(v => v.clinicalSignificance && v.clinicalSignificance !== 'unknown').length;
+  console.log(`Variants with clinical significance: ${annotatedCount}`);
+  
+  // Update filtered variants
+  browserState.filteredVariants = filterVariantsByChromosome(variants, browserState.selectedChromosome);
+  console.log(`Filtered to ${browserState.filteredVariants.length} variants for selected chromosome`);
+  
+  // Reset view to accommodate the new data
+  initializeView();
+  
+  // Render with updated data
+  renderBrowser();
+}
+
+/**
  * Initialize the view without potential recursive calls
  */
 function initializeView() {
@@ -117,18 +164,10 @@ function initializeView() {
  * Set up event listeners for browser interaction
  */
 function setupBrowserEventListeners() {
-  const chromosomeSelect = document.getElementById('chromosome-select');
   const zoomIn = document.getElementById('zoom-in');
   const zoomOut = document.getElementById('zoom-out');
   const zoomReset = document.getElementById('zoom-reset');
   const canvas = browserState.canvas;
-  
-  if (chromosomeSelect) {
-    chromosomeSelect.addEventListener('change', (event) => {
-      browserState.selectedChromosome = event.target.value;
-      resetView();
-    });
-  }
   
   if (zoomIn) {
     zoomIn.addEventListener('click', () => zoom(0.5));
@@ -180,6 +219,19 @@ function setupBrowserEventListeners() {
     
     // Set initial cursor
     canvas.style.cursor = 'grab';
+  }
+  
+  // Add chromosome select handler
+  const chromosomeSelect = document.getElementById('chromosome-select');
+  if (chromosomeSelect) {
+    chromosomeSelect.addEventListener('change', (event) => {
+      browserState.selectedChromosome = event.target.value;
+      browserState.filteredVariants = filterVariantsByChromosome(
+        browserState.variants, 
+        browserState.selectedChromosome
+      );
+      initializeView();
+    });
   }
 }
 
@@ -243,10 +295,10 @@ function filterVariantsByChromosome(variants, chromosome) {
  */
 function getMaxPosition() {
   if (browserState.selectedChromosome === 'all') {
-    return Math.max(...Object.values(chromosomeLengths));
+    return Math.max(...Object.values(chromosomeSizes));
   }
   
-  return chromosomeLengths[browserState.selectedChromosome] || 250000000;
+  return chromosomeSizes[browserState.selectedChromosome] || 250000000;
 }
 
 /**
@@ -316,41 +368,4 @@ function renderBrowser() {
   ctx.fillText(chrText, 10, 20);
   ctx.fillText(rangeText, 10, 40);
   ctx.fillText(countText, 10, 60);
-}
-
-/**
- * Update the genome browser with new data or filters
- * @param {Array} variants - All variants
- * @param {Object} filters - Applied filters
- */
-export function updateGenomeBrowser(variants, filters) {
-  browserState.variants = variants;
-  
-  // Apply filters
-  let filteredVariants = filterVariantsByChromosome(variants, browserState.selectedChromosome);
-  
-  if (filters) {
-    if (filters.significance !== 'all') {
-      filteredVariants = filteredVariants.filter(v => {
-        return v.clinicalSignificance && v.clinicalSignificance.toLowerCase().includes(filters.significance);
-      });
-    }
-    
-    if (filters.search) {
-      const searchTerm = filters.search.toLowerCase();
-      filteredVariants = filteredVariants.filter(v => {
-        const searchFields = [
-          v.rsID,
-          v.gene,
-          v.condition,
-          v.clinicalSignificance
-        ].map(field => (field || '').toLowerCase());
-        
-        return searchFields.some(field => field.includes(searchTerm));
-      });
-    }
-  }
-  
-  browserState.filteredVariants = filteredVariants;
-  renderBrowser();
 }

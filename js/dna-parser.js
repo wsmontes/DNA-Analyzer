@@ -1,10 +1,29 @@
 /**
+ * DNA Parser Module
+ * 
+ * Handles decompression and parsing of DNA data files in multiple formats.
+ * Supports ZIP and GZIP compressed files containing DNA genotype data.
+ * 
+ * Dependencies:
+ * - pako: For gzip decompression
+ * - JSZip: For zip file handling
+ * 
+ * Exports:
+ * - decompressFile: Decompress DNA data files (.zip or .gz)
+ * - parseGenotypeFile: Parse decompressed genotype data into structured format
+ */
+
+/**
  * Decompresses a DNA data file using the pako or JSZip library
  * @param {File} file - The compressed DNA data file (.zip or .gz)
  * @param {Function} progressCallback - Callback for reporting progress
  * @returns {Promise<string>} - The decompressed file contents
  */
 export async function decompressFile(file, progressCallback = null) {
+  if (!file) {
+    throw new Error('No file provided for decompression');
+  }
+  
   return new Promise((resolve, reject) => {
     try {
       const fileReader = new FileReader();
@@ -141,6 +160,10 @@ export async function decompressFile(file, progressCallback = null) {
  * @returns {Promise<Array>} - Array of parsed genotype records
  */
 export async function parseGenotypeFile(data, progressCallback = null) {
+  if (!data) {
+    throw new Error('No data provided for parsing');
+  }
+  
   return new Promise((resolve, reject) => {
     try {
       // Split the file into lines

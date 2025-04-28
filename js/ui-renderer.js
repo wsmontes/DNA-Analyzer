@@ -1,4 +1,24 @@
 /**
+ * UI Renderer Module
+ * 
+ * Handles all UI updates and rendering for the DNA Analyzer application.
+ * Provides functions for updating progress bars, formatting data, and rendering results.
+ * 
+ * Dependencies:
+ * - None (standalone UI utility module)
+ * 
+ * Exports:
+ * - updateProgressBar: Updates a progress bar with progress percentage and message
+ * - renderResultsTable: Renders the variants table with filtering and sorting
+ * - formatClinicalSignificance: Formats clinical significance text for display
+ * - safeFormatNumber: Safely formats numbers with locale-specific separators
+ * - hideError: Hides the error message section
+ * - showError: Displays an error message to the user
+ * - filterVariants: Filters variants based on provided criteria
+ * - sortVariants: Sorts variants based on field and direction
+ */
+
+/**
  * Safely formats a number with locale-specific thousands separators
  * @param {number|null|undefined} value - The number to format
  * @param {string} defaultValue - The default value if the input is invalid
@@ -70,17 +90,26 @@ export function hideError() {
 }
 
 /**
- * Show an error message to the user
- * @param {string} message - The error message to display
+ * Display an error message with the option to dismiss
+ * @param {string} message - Error message to display
+ * @param {boolean} isDismissable - Whether the error can be dismissed
  */
-export function showError(message) {
+export function showError(message, isDismissable = true) {
   const errorSection = document.getElementById('error-section');
   const errorMessage = document.getElementById('error-message');
+  const errorDismiss = document.getElementById('error-dismiss');
   
-  if (errorSection && errorMessage) {
-    errorMessage.textContent = message;
-    errorSection.classList.remove('hidden');
+  if (!errorSection || !errorMessage) return;
+  
+  errorMessage.textContent = message;
+  errorSection.classList.remove('hidden');
+  
+  if (errorDismiss) {
+    errorDismiss.style.display = isDismissable ? 'block' : 'none';
   }
+  
+  // Scroll to error section
+  errorSection.scrollIntoView({ behavior: 'smooth' });
 }
 
 /**

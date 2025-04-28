@@ -1,6 +1,25 @@
+/**
+ * Main Application Module
+ * 
+ * Entry point for the DNA Analyzer application.
+ * Coordinates all application functionality and handles user interaction.
+ * 
+ * Dependencies:
+ * - dna-parser.js: For file decompression and parsing
+ * - clinvar-annotator.js: For variant annotation
+ * - ui-renderer.js: For UI updates and rendering
+ * - genome-browser.js: For genomic visualization
+ * - ai-interpreter.js: For clinical interpretation
+ * - storage.js: For data caching
+ * - worker-utils.js: For worker management
+ * 
+ * Exports:
+ * - None (main application controller)
+ */
+
 import { decompressFile } from './dna-parser.js';
 import { parseGenotypeFile } from './dna-parser.js';
-import { loadClinVarData, annotateVariants } from './clinvar-annotator.js';
+import { loadClinVarData, annotateVariants, cleanup as cleanupClinvar } from './clinvar-annotator.js';
 import { renderResultsTable, updateProgressBar, showError, hideError } from './ui-renderer.js';
 import { initGenomeBrowser, updateGenomeBrowser } from './genome-browser.js';
 import { generateClinicalSummary } from './ai-interpreter.js';
@@ -8,7 +27,6 @@ import { setupIndexedDB, getCachedClinVarData, cacheClinVarData } from './storag
 
 // Import cleanup utilities
 import { cleanupMemory } from './worker-utils.js';
-import { cleanup as cleanupClinvar } from './clinvar-annotator.js';
 
 // DOM Elements
 const uploadBtn = document.getElementById('upload-btn');
@@ -30,11 +48,15 @@ let appState = {
   filters: {
     significance: 'all',
     chromosome: 'all',
-    search: ''
+    search: '',
+    sortField: 'rsID',
+    sortDirection: 'asc'
   }
 };
 
-// Initialize the application
+/**
+ * Initialize the application
+ */
 async function initApp() {
   try {
     // Setup IndexedDB
@@ -45,7 +67,7 @@ async function initApp() {
     
     // Check for Web Workers support
     if (!window.Worker) {
-      showError("Your browser doesn't support Web Workers. Some features may be limited.");
+      showError("Your browser doesn't support Web Workers. Some features may be limited.", false);
     }
     
     // Listen for ClinVar data missing events
@@ -54,7 +76,7 @@ async function initApp() {
     console.log('DNA Analysis Tool initialized successfully');
   } catch (error) {
     console.error('Failed to initialize app:', error);
-    showError(`Initialization error: ${error.message}`);
+    showError(`Initialization error: ${error.message}`, false);
   }
 }
 
@@ -67,12 +89,13 @@ function handleMissingClinVar(event) {
   warningDiv.className = 'clinvar-warning';
   warningDiv.innerHTML = `
     <div class="warning-content">
-      <h3>ClinVar Data Not Found</h3>
-      <p>Annotation is running with limited functionality using mock data.</p>
+      <h3>ClinVar Data Issue</h3>
+      <p>${event.detail.error || 'Unable to process ClinVar data'}</p>
       <p>To enable full functionality, please download ClinVar data files.</p>
       <a href="https://www.ncbi.nlm.nih.gov/clinvar/docs/ftp_primer/" target="_blank">
         Learn how to download ClinVar data
       </a>
+      <button class="download-clinvar">Download ClinVar Files</button>
       <button class="close-warning">Dismiss</button>
     </div>
   `;
@@ -82,6 +105,13 @@ function handleMissingClinVar(event) {
   // Add event listener to close button
   warningDiv.querySelector('.close-warning').addEventListener('click', () => {
     warningDiv.remove();
+  });
+  
+  // Add event listener for download button
+  warningDiv.querySelector('.download-clinvar').addEventListener('click', () => {
+    import('./clinvar-downloader.js').then(module => {
+      module.showDownloadModal();
+    });
   });
 }
 
@@ -175,7 +205,7 @@ async function processFile(file) {
     
     // Step 1: Decompress the file
     updateProgressBar('decompress', 0, 'Starting decompression...');
-    const decompressedContent = await decompressFile(file, (progress) => {
+    let decompressedContent = await decompressFile(file, (progress) => {
       updateProgressBar('decompress', progress, `Decompressing: ${progress.toFixed(1)}%`);
     });
     updateProgressBar('decompress', 100, 'Decompression complete');
@@ -187,14 +217,28 @@ async function processFile(file) {
     });
     updateProgressBar('parse', 100, `Parsed ${genotypeRecords.length.toLocaleString()} genotype records`);
     
+    // Store in app state
+    appState.genotypeRecords = genotypeRecords;
+    
+    // Clear decompressed content to free memory
+    const decompressedSize = decompressedContent.length;
+    decompressedContent = null; // Allow garbage collection
+    
     // Step 3: Load ClinVar data
     updateProgressBar('clinvar', 0, 'Loading ClinVar data...');
     let clinVarData;
     try {
-      clinvarData = await loadClinVarData();
+      clinVarData = await loadClinVarData();
+      appState.clinVarData = clinVarData;
+      
+      // If we got data with no variants, throw error
+      if (clinVarData && (!clinVarData.variants || Object.keys(clinVarData.variants).length === 0) && 
+          (!clinVarData.query || typeof clinVarData.query !== 'function')) {
+        throw new Error('ClinVar data was loaded but contains no variant information');
+      }
     } catch (error) {
       console.error("Error loading ClinVar data:", error);
-      displayErrorMessage(`Failed to load ClinVar data: ${error.message}. Please ensure all required ClinVar files are in the clinvar/ directory.`);
+      showError(`Failed to load ClinVar data: ${error.message}. Please ensure all required ClinVar files are in the clinvar/ directory.`);
       throw error; // Re-throw to stop processing
     }
     
@@ -203,6 +247,10 @@ async function processFile(file) {
     const annotatedVariants = await annotateVariants(genotypeRecords, clinVarData, (progress, message) => {
       updateProgressBar('annotate', progress, message);
     });
+    
+    // Store in app state and free memory
+    appState.annotatedVariants = annotatedVariants;
+    appState.genotypeRecords = null; // No longer needed, free memory
     
     // Count variants by clinical significance
     const significanceCounts = countByClinicalSignificance(annotatedVariants);
@@ -216,7 +264,7 @@ async function processFile(file) {
     document.getElementById('browser-section').classList.remove('hidden');
     
     // Render the results table
-    renderResultsTable(annotatedVariants, {}, 1, 20);
+    renderResultsTable(annotatedVariants, appState.filters, appState.currentPage, appState.pageSize);
     document.getElementById('results-section').classList.remove('hidden');
     
     // Generate and display AI summary
@@ -227,11 +275,12 @@ async function processFile(file) {
       cleanupAfterProcessing();
     }, 2000);
     
-    return results;
+    return { variants: annotatedVariants, counts: significanceCounts };
   } catch (error) {
     console.error("Error processing file:", error);
     // Clean up even on error
     cleanupAfterProcessing();
+    showError(`Error processing file: ${error.message}`);
     throw error;
   }
 }
@@ -393,6 +442,67 @@ function toggleSummary() {
   } else {
     summaryContent.classList.remove('hidden');
     summaryToggle.textContent = 'Hide Summary';
+  }
+}
+
+/**
+ * Count variants by clinical significance
+ * @param {Array} variants - The variants to count
+ * @returns {Object} - Counts by significance category
+ */
+function countByClinicalSignificance(variants) {
+  const counts = {
+    pathogenic: 0,
+    likely_pathogenic: 0,
+    uncertain_significance: 0,
+    likely_benign: 0,
+    benign: 0,
+    unknown: 0
+  };
+  
+  variants.forEach(variant => {
+    const sig = variant.clinicalSignificance?.toLowerCase() || '';
+    
+    if (sig.includes('pathogenic') && !sig.includes('likely') && !sig.includes('not')) {
+      counts.pathogenic++;
+    } else if (sig.includes('likely pathogenic')) {
+      counts.likely_pathogenic++;
+    } else if (sig.includes('uncertain significance') || sig.includes('vus')) {
+      counts.uncertain_significance++;
+    } else if (sig.includes('likely benign')) {
+      counts.likely_benign++;
+    } else if (sig.includes('benign') && !sig.includes('likely')) {
+      counts.benign++;
+    } else {
+      counts.unknown++;
+    }
+  });
+  
+  return counts;
+}
+
+/**
+ * Generate AI summary from variants
+ * @param {Array} variants - The variants to summarize
+ */
+async function generateSummary(variants) {
+  try {
+    document.getElementById('ai-loading').classList.remove('hidden');
+    document.getElementById('ai-summary').classList.add('hidden');
+    summarySection.classList.remove('hidden');
+    
+    const summary = await generateClinicalSummary(variants);
+    
+    document.getElementById('ai-loading').classList.add('hidden');
+    const summaryElement = document.getElementById('ai-summary');
+    summaryElement.textContent = summary;
+    summaryElement.classList.remove('hidden');
+  } catch (error) {
+    console.error('Error generating summary:', error);
+    document.getElementById('ai-loading').classList.add('hidden');
+    document.getElementById('ai-summary').textContent = 
+      'Unable to generate summary. Please try again later.';
+    document.getElementById('ai-summary').classList.remove('hidden');
   }
 }
 
