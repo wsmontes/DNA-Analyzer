@@ -5,3 +5,7 @@ clinvar/gene_condition_source_id.txt
 clinvar/disease_names.txt
 clinvar/clinvar.vcf.gz.tbi
 clinvar/clinvar.vcf.gz
+clinvar/.DS_Store
+clinvar/clinvar.vcf
+clinvar/clinvar_extract.json
+clinvar/README.md
